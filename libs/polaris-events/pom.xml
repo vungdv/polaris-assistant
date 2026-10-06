@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+	<parent>
+		<groupId>vn.danang</groupId>
+		<artifactId>polaris-parent</artifactId>
+		<version>0.1.1-SNAPSHOT</version>
+		<relativePath>../../pom.xml</relativePath>
+	</parent>
+
+	<artifactId>polaris-events</artifactId>
+	<packaging>jar</packaging>
+	<name>Polaris :: Event Contracts</name>
+	<description>Published integration event contracts (EM-002 §4): payload records, CloudEvents types and logical destinations. No Spring or persistence dependencies.</description>
+
+	<dependencies>
+		<!-- Annotations only: shared by Jackson 2 and Jackson 3, no runtime behaviour -->
+		<dependency>
+			<groupId>com.fasterxml.jackson.core</groupId>
+			<artifactId>jackson-annotations</artifactId>
+		</dependency>
+
+		<!-- Test: JSON round-trip with the Spring Boot 4 default mapper (Jackson 3) -->
+		<dependency>
+			<groupId>tools.jackson.core</groupId>
+			<artifactId>jackson-databind</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.junit.jupiter</groupId>
+			<artifactId>junit-jupiter</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.assertj</groupId>
+			<artifactId>assertj-core</artifactId>
+			<scope>test</scope>
+		</dependency>
+	</dependencies>
+
+	<build>
+		<plugins>
+			<plugin>
+				<!-- No Mockito in this module, so drop the parent's Mockito javaagent argLine -->
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-surefire-plugin</artifactId>
+				<configuration>
+					<argLine>@{argLine}</argLine>
+				</configuration>
+			</plugin>
+		</plugins>
+	</build>
+</project>

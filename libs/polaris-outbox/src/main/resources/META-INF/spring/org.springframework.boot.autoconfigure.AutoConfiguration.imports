@@ -1,0 +1,2 @@
+vn.danang.polaris.outbox.autoconfigure.OutboxAutoConfiguration
+vn.danang.polaris.outbox.autoconfigure.OutboxKafkaAutoConfiguration

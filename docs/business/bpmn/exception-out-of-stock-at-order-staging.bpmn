@@ -1,0 +1,169 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" id="Definitions_Process_OutOfStockException" targetNamespace="http://bpmn.io/schema/bpmn" exporter="Camunda Modeler" exporterVersion="5.22.0">
+  <bpmn:process id="Process_OutOfStockException" name="Exception Path: Out-of-Stock at Order Staging" isExecutable="false">
+    <bpmn:documentation>How does the AI Assistant respond when a shopper's requested quantity exceeds available stock, and get them back onto the happy path? See EM-001 (docs/technical/event-models/) for where the current implementation diverges from this designed flow.</bpmn:documentation>
+    <bpmn:laneSet id="Process_OutOfStockException_laneSet">
+      <bpmn:lane id="Lane_Shopper2" name="Shopper">
+        <bpmn:flowNodeRef>D2_Start</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>S_Request2</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>S_Remedy2</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_Assistant2" name="AI Assistant">
+        <bpmn:flowNodeRef>A_Stage2</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>D2_End</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>A_Problem2</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>A_Apply2</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_Order2" name="Order Management">
+        <bpmn:flowNodeRef>O_Check2</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>O_Reject2</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+    <bpmn:startEvent id="D2_Start" name="Start:&#10;branches from order request&#10;(happy-path step 2)">
+      <bpmn:outgoing>Flow2_1</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:task id="S_Request2" name="Ask to order item(s)">
+      <bpmn:incoming>Flow2_1</bpmn:incoming>
+      <bpmn:outgoing>Flow2_2</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="A_Stage2" name="Stage order draft">
+      <bpmn:incoming>Flow2_2</bpmn:incoming>
+      <bpmn:incoming>Flow2_9</bpmn:incoming>
+      <bpmn:outgoing>Flow2_3</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:exclusiveGateway id="O_Check2" name="Sufficient stock for&#10;requested qty?">
+      <bpmn:documentation>Checks the requested quantity against live stock; a shortfall routes to the reject path.</bpmn:documentation>
+      <bpmn:incoming>Flow2_3</bpmn:incoming>
+      <bpmn:outgoing>Flow2_4</bpmn:outgoing>
+      <bpmn:outgoing>Flow2_5</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:task id="O_Reject2" name="Reject: not enough&#10;stock available">
+      <bpmn:documentation>Returns InsufficientStockException with requested vs. available units.</bpmn:documentation>
+      <bpmn:incoming>Flow2_4</bpmn:incoming>
+      <bpmn:outgoing>Flow2_6</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:endEvent id="D2_End" name="Resume happy path:&#10;present draft card">
+      <bpmn:incoming>Flow2_5</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:task id="A_Problem2" name="Render problem card with&#10;shortage &amp; remedy options">
+      <bpmn:documentation>Rendered as an RFC 7807 Problem Card, per PRD-003 FR-7.</bpmn:documentation>
+      <bpmn:incoming>Flow2_6</bpmn:incoming>
+      <bpmn:outgoing>Flow2_7</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="S_Remedy2" name="Pick a remedy:&#10;adjust qty / search alternatives / remove item">
+      <bpmn:incoming>Flow2_7</bpmn:incoming>
+      <bpmn:outgoing>Flow2_8</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="A_Apply2" name="Apply chosen remedy to draft">
+      <bpmn:documentation>Adjust qty retries with the corrected quantity; search alternatives redirects to catalog search; remove item drops the line — all three re-enter staging (Flow2_9).</bpmn:documentation>
+      <bpmn:incoming>Flow2_8</bpmn:incoming>
+      <bpmn:outgoing>Flow2_9</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:sequenceFlow id="Flow2_1" sourceRef="D2_Start" targetRef="S_Request2" />
+    <bpmn:sequenceFlow id="Flow2_2" sourceRef="S_Request2" targetRef="A_Stage2" />
+    <bpmn:sequenceFlow id="Flow2_3" sourceRef="A_Stage2" targetRef="O_Check2" />
+    <bpmn:sequenceFlow id="Flow2_4" sourceRef="O_Check2" targetRef="O_Reject2" name="No" />
+    <bpmn:sequenceFlow id="Flow2_5" sourceRef="O_Check2" targetRef="D2_End" name="Yes" />
+    <bpmn:sequenceFlow id="Flow2_6" sourceRef="O_Reject2" targetRef="A_Problem2" />
+    <bpmn:sequenceFlow id="Flow2_7" sourceRef="A_Problem2" targetRef="S_Remedy2" />
+    <bpmn:sequenceFlow id="Flow2_8" sourceRef="S_Remedy2" targetRef="A_Apply2" />
+    <bpmn:sequenceFlow id="Flow2_9" sourceRef="A_Apply2" targetRef="A_Stage2" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="Process_OutOfStockException_diagram">
+    <bpmndi:BPMNPlane id="Process_OutOfStockException_plane" bpmnElement="Process_OutOfStockException">
+      <bpmndi:BPMNShape id="Process_OutOfStockException_pool_di" bpmnElement="Process_OutOfStockException" isHorizontal="true">
+        <dc:Bounds x="160" y="80" width="1850" height="450" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_Shopper2_di" bpmnElement="Lane_Shopper2" isHorizontal="true">
+        <dc:Bounds x="160" y="80" width="1850" height="150" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_Assistant2_di" bpmnElement="Lane_Assistant2" isHorizontal="true">
+        <dc:Bounds x="160" y="230" width="1850" height="150" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_Order2_di" bpmnElement="Lane_Order2" isHorizontal="true">
+        <dc:Bounds x="160" y="380" width="1850" height="150" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="D2_Start_di" bpmnElement="D2_Start">
+        <dc:Bounds x="242" y="137" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="S_Request2_di" bpmnElement="S_Request2">
+        <dc:Bounds x="390" y="115" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="A_Stage2_di" bpmnElement="A_Stage2">
+        <dc:Bounds x="580" y="265" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="O_Check2_di" bpmnElement="O_Check2">
+        <dc:Bounds x="805" y="430" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="O_Reject2_di" bpmnElement="O_Reject2">
+        <dc:Bounds x="960" y="415" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="D2_End_di" bpmnElement="D2_End">
+        <dc:Bounds x="1002" y="287" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="A_Problem2_di" bpmnElement="A_Problem2">
+        <dc:Bounds x="1150" y="265" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="S_Remedy2_di" bpmnElement="S_Remedy2">
+        <dc:Bounds x="1340" y="115" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="A_Apply2_di" bpmnElement="A_Apply2">
+        <dc:Bounds x="1530" y="265" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow2_1_di" bpmnElement="Flow2_1">
+        <di:waypoint x="278" y="155" />
+        <di:waypoint x="334" y="155" />
+        <di:waypoint x="334" y="155" />
+        <di:waypoint x="390" y="155" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow2_2_di" bpmnElement="Flow2_2">
+        <di:waypoint x="510" y="155" />
+        <di:waypoint x="545" y="155" />
+        <di:waypoint x="545" y="305" />
+        <di:waypoint x="580" y="305" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow2_3_di" bpmnElement="Flow2_3">
+        <di:waypoint x="700" y="305" />
+        <di:waypoint x="752" y="305" />
+        <di:waypoint x="752" y="455" />
+        <di:waypoint x="805" y="455" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow2_4_di" bpmnElement="Flow2_4">
+        <di:waypoint x="855" y="455" />
+        <di:waypoint x="908" y="455" />
+        <di:waypoint x="908" y="455" />
+        <di:waypoint x="960" y="455" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow2_5_di" bpmnElement="Flow2_5">
+        <di:waypoint x="855" y="455" />
+        <di:waypoint x="928" y="455" />
+        <di:waypoint x="928" y="305" />
+        <di:waypoint x="1002" y="305" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow2_6_di" bpmnElement="Flow2_6">
+        <di:waypoint x="1080" y="455" />
+        <di:waypoint x="1115" y="455" />
+        <di:waypoint x="1115" y="305" />
+        <di:waypoint x="1150" y="305" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow2_7_di" bpmnElement="Flow2_7">
+        <di:waypoint x="1270" y="305" />
+        <di:waypoint x="1305" y="305" />
+        <di:waypoint x="1305" y="155" />
+        <di:waypoint x="1340" y="155" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow2_8_di" bpmnElement="Flow2_8">
+        <di:waypoint x="1460" y="155" />
+        <di:waypoint x="1495" y="155" />
+        <di:waypoint x="1495" y="305" />
+        <di:waypoint x="1530" y="305" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow2_9_di" bpmnElement="Flow2_9">
+        <di:waypoint x="1590" y="345" />
+        <di:waypoint x="1590" y="570" />
+        <di:waypoint x="640" y="570" />
+        <di:waypoint x="640" y="345" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

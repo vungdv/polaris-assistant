@@ -1,0 +1,26 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "java",
+      "name": "Debug Polaris",
+      "request": "launch",
+      "mainClass": "vn.danang.polaris.PolarisApp",
+      "projectName": "polaris"
+    },
+    {
+      "type": "java",
+      "name": "Debug Polaris Assistant",
+      "request": "launch",
+      "mainClass": "vn.danang.polaris.assistant.PolarisAssistantApp",
+      "projectName": "polaris-assistant"
+    },
+    {
+      "type": "java",
+      "name": "Attach to Remote (8081)",
+      "request": "attach",
+      "hostName": "localhost",
+      "port": 8081
+    }
+  ]
+}

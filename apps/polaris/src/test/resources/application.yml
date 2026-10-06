@@ -1,0 +1,49 @@
+spring:
+  threads:
+    virtual:
+      enabled: true
+  jpa:
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+  kafka:
+    admin:
+      operation-timeout: 10s
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: https://id.polaris.local/realms/polaris
+
+management:
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      # Mirrors the production group so this suite actually exercises "readiness requires a
+      # working DB": Testcontainers gives this suite a real, live Postgres, so "db" is
+      # genuinely up here rather than being a dependency this suite needs to fake or disable.
+      group:
+        readiness:
+          include: readinessState,db
+  endpoints:
+    web:
+      exposure:
+        include: health,info # ,metrics,prometheus
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
+
+# Testcontainers runs a single Kafka broker; the dev stack runs three (replicas 3, min ISR 2).
+polaris:
+  order:
+    lifecycle-topic:
+      replicas: 1
+      min-insync-replicas: 1
+    shipment-listener:
+      dlt-replicas: 1
+      dlt-min-insync-replicas: 1

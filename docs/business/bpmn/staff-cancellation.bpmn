@@ -1,0 +1,264 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" id="Definitions_Process_StaffCancellation" targetNamespace="http://bpmn.io/schema/bpmn" exporter="bpmn-js (https://demo.bpmn.io)" exporterVersion="18.30.1">
+  <bpmn:process id="Process_StaffCancellation" name="Staff Cancellation on a Shopper&#39;s Behalf" isExecutable="false">
+    <bpmn:documentation>How does store/call-center staff cancel an order on a shopper's behalf, with the same confirmation guarantee and an audit trail as self-service cancellation?</bpmn:documentation>
+    <bpmn:laneSet id="Process_StaffCancellation_laneSet">
+      <bpmn:lane id="Lane_Staff3" name="Store/Call-Center Staff">
+        <bpmn:flowNodeRef>T_Start</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>T_Ask</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>T_Confirm</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>T_Rejected</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>T_End</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_Assistant3" name="AI Assistant">
+        <bpmn:flowNodeRef>A_Auth</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>A_Review</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>A_Gate3</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>A_Problem3</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>A_Execute3</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>A_ConfirmCard3</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>A_EndDeclined3</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_Order3" name="Order Management">
+        <bpmn:flowNodeRef>O_Check3</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>O_Reject3</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>O_Cancel3</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+    <bpmn:startEvent id="T_Start" name="Start:&#10;customer wants to cancel">
+      <bpmn:outgoing>Flow3_1</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:task id="T_Ask" name="Ask assistant to cancel&#10;an order for a customer">
+      <bpmn:documentation>Captures customer_id and order number.</bpmn:documentation>
+      <bpmn:incoming>Flow3_1</bpmn:incoming>
+      <bpmn:outgoing>Flow3_2</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="A_Auth" name="Verify staff is authorized&#10;for this customer">
+      <bpmn:documentation>Validates staff authorization for the given customer_id — the IDOR check that differs from the shopper's own-identity check.</bpmn:documentation>
+      <bpmn:incoming>Flow3_2</bpmn:incoming>
+      <bpmn:outgoing>Flow3_3</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:exclusiveGateway id="O_Check3" name="Order still&#10;cancellable?">
+      <bpmn:documentation>Cancellable states: PLACED or CONFIRMED.</bpmn:documentation>
+      <bpmn:incoming>Flow3_3</bpmn:incoming>
+      <bpmn:outgoing>Flow3_4</bpmn:outgoing>
+      <bpmn:outgoing>Flow3_11</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:task id="A_Review" name="Render Cancellation Review Card&#10;(items, restock notice)">
+      <bpmn:incoming>Flow3_4</bpmn:incoming>
+      <bpmn:outgoing>Flow3_5</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="O_Reject3" name="Reject: order can no&#10;longer be cancelled">
+      <bpmn:documentation>Returns an RFC 7807 409 business conflict for orders in PROCESSING, SHIPPED, DELIVERING, DELIVERED, or CANCELLED.</bpmn:documentation>
+      <bpmn:incoming>Flow3_11</bpmn:incoming>
+      <bpmn:outgoing>Flow3_12</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:exclusiveGateway id="A_Gate3" name="Staff confirms&#10;cancellation?">
+      <bpmn:documentation>Mandatory Human-in-the-Loop Confirmation Gate (FR-3); no cancellation executes automatically.</bpmn:documentation>
+      <bpmn:incoming>Flow3_5</bpmn:incoming>
+      <bpmn:outgoing>Flow3_6</bpmn:outgoing>
+      <bpmn:outgoing>Flow3_14</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:task id="A_Problem3" name="Render problem card with&#10;return/support guidance">
+      <bpmn:documentation>Rendered as an RFC 7807 Problem Card, per PRD-003 FR-7.</bpmn:documentation>
+      <bpmn:incoming>Flow3_12</bpmn:incoming>
+      <bpmn:outgoing>Flow3_13</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="T_Confirm" name="Click &#39;Confirm Cancellation&#39;">
+      <bpmn:incoming>Flow3_6</bpmn:incoming>
+      <bpmn:outgoing>Flow3_7</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:endEvent id="T_Rejected" name="End:&#10;cancellation rejected">
+      <bpmn:incoming>Flow3_13</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:task id="A_Execute3" name="Execute cancellation,&#10;recording which staff acted">
+      <bpmn:documentation>operator_id is recorded in the order's audit metadata.</bpmn:documentation>
+      <bpmn:incoming>Flow3_7</bpmn:incoming>
+      <bpmn:outgoing>Flow3_8</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="O_Cancel3" name="Cancel order &#38;&#10;restore inventory">
+      <bpmn:documentation>Transitions the order to CANCELLED status; inventory is restored atomically.</bpmn:documentation>
+      <bpmn:incoming>Flow3_8</bpmn:incoming>
+      <bpmn:outgoing>Flow3_9</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="A_ConfirmCard3" name="Render cancellation&#10;confirmation card">
+      <bpmn:incoming>Flow3_9</bpmn:incoming>
+      <bpmn:outgoing>Flow3_10</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:endEvent id="T_End" name="End:&#10;order cancelled">
+      <bpmn:incoming>Flow3_10</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:endEvent id="A_EndDeclined3" name="End:&#10;cancellation declined">
+      <bpmn:incoming>Flow3_14</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow3_1" sourceRef="T_Start" targetRef="T_Ask" />
+    <bpmn:sequenceFlow id="Flow3_2" sourceRef="T_Ask" targetRef="A_Auth" />
+    <bpmn:sequenceFlow id="Flow3_3" sourceRef="A_Auth" targetRef="O_Check3" />
+    <bpmn:sequenceFlow id="Flow3_4" name="Yes" sourceRef="O_Check3" targetRef="A_Review" />
+    <bpmn:sequenceFlow id="Flow3_5" sourceRef="A_Review" targetRef="A_Gate3" />
+    <bpmn:sequenceFlow id="Flow3_6" name="Yes" sourceRef="A_Gate3" targetRef="T_Confirm" />
+    <bpmn:sequenceFlow id="Flow3_7" sourceRef="T_Confirm" targetRef="A_Execute3" />
+    <bpmn:sequenceFlow id="Flow3_8" sourceRef="A_Execute3" targetRef="O_Cancel3" />
+    <bpmn:sequenceFlow id="Flow3_9" sourceRef="O_Cancel3" targetRef="A_ConfirmCard3" />
+    <bpmn:sequenceFlow id="Flow3_10" sourceRef="A_ConfirmCard3" targetRef="T_End" />
+    <bpmn:sequenceFlow id="Flow3_11" name="No" sourceRef="O_Check3" targetRef="O_Reject3" />
+    <bpmn:sequenceFlow id="Flow3_12" sourceRef="O_Reject3" targetRef="A_Problem3" />
+    <bpmn:sequenceFlow id="Flow3_13" sourceRef="A_Problem3" targetRef="T_Rejected" />
+    <bpmn:sequenceFlow id="Flow3_14" name="No" sourceRef="A_Gate3" targetRef="A_EndDeclined3" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="Process_StaffCancellation_diagram">
+    <bpmndi:BPMNPlane id="Process_StaffCancellation_plane" bpmnElement="Process_StaffCancellation">
+      <bpmndi:BPMNShape id="Lane_Order3_di" bpmnElement="Lane_Order3" isHorizontal="true">
+        <dc:Bounds x="160" y="440" width="2420" height="150" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_Assistant3_di" bpmnElement="Lane_Assistant3" isHorizontal="true">
+        <dc:Bounds x="160" y="250" width="2420" height="190" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_Staff3_di" bpmnElement="Lane_Staff3" isHorizontal="true">
+        <dc:Bounds x="160" y="80" width="2420" height="170" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="T_Start_di" bpmnElement="T_Start">
+        <dc:Bounds x="242" y="147" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="T_Ask_di" bpmnElement="T_Ask">
+        <dc:Bounds x="390" y="125" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="A_Auth_di" bpmnElement="A_Auth">
+        <dc:Bounds x="580" y="305" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="O_Check3_di" bpmnElement="O_Check3" isMarkerVisible="true">
+        <dc:Bounds x="805" y="490" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="A_Review_di" bpmnElement="A_Review">
+        <dc:Bounds x="960" y="305" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="O_Reject3_di" bpmnElement="O_Reject3">
+        <dc:Bounds x="960" y="475" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="A_Gate3_di" bpmnElement="A_Gate3" isMarkerVisible="true">
+        <dc:Bounds x="1185" y="320" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1245" y="331.5" width="68" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="A_Problem3_di" bpmnElement="A_Problem3">
+        <dc:Bounds x="1340" y="305" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="T_Confirm_di" bpmnElement="T_Confirm">
+        <dc:Bounds x="1340" y="125" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="T_Rejected_di" bpmnElement="T_Rejected">
+        <dc:Bounds x="1572" y="147" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="A_Execute3_di" bpmnElement="A_Execute3">
+        <dc:Bounds x="1530" y="305" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="O_Cancel3_di" bpmnElement="O_Cancel3">
+        <dc:Bounds x="1720" y="475" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="A_ConfirmCard3_di" bpmnElement="A_ConfirmCard3">
+        <dc:Bounds x="1910" y="305" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="T_End_di" bpmnElement="T_End">
+        <dc:Bounds x="2142" y="147" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="A_EndDeclined3_di" bpmnElement="A_EndDeclined3">
+        <dc:Bounds x="2142" y="382" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2131" y="418" width="59" height="40" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow3_1_di" bpmnElement="Flow3_1">
+        <di:waypoint x="278" y="165" />
+        <di:waypoint x="334" y="165" />
+        <di:waypoint x="334" y="165" />
+        <di:waypoint x="390" y="165" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow3_2_di" bpmnElement="Flow3_2">
+        <di:waypoint x="510" y="165" />
+        <di:waypoint x="545" y="165" />
+        <di:waypoint x="545" y="345" />
+        <di:waypoint x="580" y="345" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow3_3_di" bpmnElement="Flow3_3">
+        <di:waypoint x="700" y="345" />
+        <di:waypoint x="752" y="345" />
+        <di:waypoint x="752" y="515" />
+        <di:waypoint x="805" y="515" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow3_4_di" bpmnElement="Flow3_4">
+        <di:waypoint x="855" y="515" />
+        <di:waypoint x="880" y="515" />
+        <di:waypoint x="880" y="345" />
+        <di:waypoint x="960" y="345" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="886" y="420" width="18" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow3_5_di" bpmnElement="Flow3_5">
+        <di:waypoint x="1080" y="345" />
+        <di:waypoint x="1132" y="345" />
+        <di:waypoint x="1132" y="345" />
+        <di:waypoint x="1185" y="345" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow3_6_di" bpmnElement="Flow3_6">
+        <di:waypoint x="1210" y="320" />
+        <di:waypoint x="1210" y="165" />
+        <di:waypoint x="1340" y="165" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1268" y="173" width="18" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow3_7_di" bpmnElement="Flow3_7">
+        <di:waypoint x="1460" y="165" />
+        <di:waypoint x="1495" y="165" />
+        <di:waypoint x="1495" y="345" />
+        <di:waypoint x="1530" y="345" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow3_8_di" bpmnElement="Flow3_8">
+        <di:waypoint x="1650" y="345" />
+        <di:waypoint x="1685" y="345" />
+        <di:waypoint x="1685" y="515" />
+        <di:waypoint x="1720" y="515" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow3_9_di" bpmnElement="Flow3_9">
+        <di:waypoint x="1840" y="515" />
+        <di:waypoint x="1875" y="515" />
+        <di:waypoint x="1875" y="345" />
+        <di:waypoint x="1910" y="345" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow3_10_di" bpmnElement="Flow3_10">
+        <di:waypoint x="2030" y="345" />
+        <di:waypoint x="2086" y="345" />
+        <di:waypoint x="2086" y="165" />
+        <di:waypoint x="2142" y="165" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow3_11_di" bpmnElement="Flow3_11">
+        <di:waypoint x="855" y="515" />
+        <di:waypoint x="908" y="515" />
+        <di:waypoint x="908" y="515" />
+        <di:waypoint x="960" y="515" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow3_12_di" bpmnElement="Flow3_12">
+        <di:waypoint x="1080" y="515" />
+        <di:waypoint x="1400" y="515" />
+        <di:waypoint x="1400" y="385" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow3_13_di" bpmnElement="Flow3_13">
+        <di:waypoint x="1400" y="305" />
+        <di:waypoint x="1400" y="270" />
+        <di:waypoint x="1516" y="270" />
+        <di:waypoint x="1516" y="165" />
+        <di:waypoint x="1572" y="165" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow3_14_di" bpmnElement="Flow3_14">
+        <di:waypoint x="1210" y="370" />
+        <di:waypoint x="1210" y="400" />
+        <di:waypoint x="2140" y="400" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1218" y="381" width="15" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

@@ -1,0 +1,77 @@
+spring:
+  threads:
+    virtual:
+      enabled: true
+  jpa:
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: https://id.polaris.local/realms/polaris
+
+management:
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  endpoints:
+    web:
+      exposure:
+        include: health,info # ,metrics,prometheus
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
+    # This suite boots the full application context (@SpringBootTest) with no real Gemini/
+    # TypeSafe credentials and no running Polaris Core MCP server, so the dependency probes
+    # would always and correctly report down here. That's expected in this sandbox, not a bug,
+    # but it's not what these tests are about (probe wiring/security exposure) - dependency-down
+    # behavior is covered directly by GeminiHealthIndicatorTest, TypeSafeHealthIndicatorTest and
+    # PolarisMcpHealthIndicatorTest instead. Disable the indicators here so this suite keeps
+    # exercising a plain, dependency-free health surface.
+    gemini:
+      enabled: false
+    typeSafe:
+      enabled: false
+    polarisMcp:
+      enabled: false
+    # Same reasoning as above: this suite doesn't start a real Redis, so the auto-configured
+    # redis health contributor would always report DOWN and drag down the aggregate status.
+    redis:
+      enabled: false
+
+# Same shape as production, with small values so breaker and retry tests stay fast
+resilience4j:
+  circuitbreaker:
+    configs:
+      default:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 4
+        minimum-number-of-calls: 4
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 1
+    instances:
+      gemini:
+        base-config: default
+      typeSafe:
+        base-config: default
+        sliding-window-type: TIME_BASED
+        sliding-window-size: 60
+  retry:
+    configs:
+      gemini:
+        max-attempts: 2
+        wait-duration: 50ms
+        enable-exponential-backoff: true
+        exponential-backoff-multiplier: 2
+        enable-randomized-wait: true
+        randomized-wait-factor: 0.5
+
+

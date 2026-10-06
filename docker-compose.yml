@@ -1,0 +1,390 @@
+# Shared by the three Kafka nodes (kafka-1..3); each node adds its id, listeners, host port and volume.
+x-kafka-node: &kafka-node
+  image: apache/kafka:3.9.1
+  networks:
+    - polaris-net
+x-kafka-env: &kafka-env
+  # Fixed KRaft cluster id (kafka-storage.sh random-uuid), shared by every node, so the data volumes survive restarts.
+  CLUSTER_ID: AKArqq-IRKGyKm7xBG1bCw
+  KAFKA_PROCESS_ROLES: broker,controller
+  KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka-1:9093,2@kafka-2:9093,3@kafka-3:9093
+  KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+  # INTERNAL: apps on polaris-net (kafka-N:9092). HOST: apps run from the host with `make run` (localhost:9094-9096).
+  KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT,HOST:PLAINTEXT
+  KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+  KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+  # Cluster defaults: 3 replicas, and acks=all needs 2 in sync, so one node can be down without losing a write.
+  KAFKA_DEFAULT_REPLICATION_FACTOR: "3"
+  KAFKA_MIN_INSYNC_REPLICAS: "2"
+  KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "3"
+  KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "3"
+  KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "2"
+  KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
+  KAFKA_LOG_DIRS: /var/lib/kafka/data
+x-kafka-healthcheck: &kafka-healthcheck
+  interval: 10s
+  timeout: 10s
+  retries: 10
+  start_period: 20s
+
+services:
+  nginx:
+    # Official -otel variant: ships ngx_otel_module. Pinned.
+    image: nginx:1.31.6-alpine-otel
+    container_name: nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./docker/nginx/certs:/etc/nginx/certs:ro
+    depends_on:
+      keycloak:
+        condition: service_started
+      polaris:
+        condition: service_started
+      polaris-assistant:
+        condition: service_started
+      swagger-ui:
+        condition: service_started
+    # The Collector has a fixed address on polaris-net (see override) and nginx maps its name to
+    # it, so nginx starts and restarts with NO dependency on the Collector.
+    extra_hosts:
+      - "otel-collector:172.29.250.10"
+    healthcheck:
+      # internal-only stub_status listener (8088, not published)
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://127.0.0.1:8088/stub_status"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
+    networks:
+      polaris-net:
+        aliases:
+          - id.polaris.local
+          - polaris.local
+          - grafana.polaris.local
+  swagger-ui:
+    image: swaggerapi/swagger-ui:v5.17.14
+    container_name: swagger-ui
+    environment:
+      # Multiple specs -> renders a dropdown selector in the Swagger UI top bar
+      URLS: >
+        [
+          {url: "/v3/api-docs", name: "Product Catalog API"},
+          {url: "/v3/api-docs/assistant", name: "Assistant API"}
+        ]
+      # optional: avoids CORS issues since nginx proxies same-origin
+      BASE_URL: /swagger-ui
+      OAUTH_CLIENT_ID: polaris-app
+      OAUTH_USE_PKCE: "true"
+    expose:
+      - "8080"
+    networks:
+      - polaris-net
+  polaris:
+    build:
+      context: .
+      dockerfile: apps/polaris/Dockerfile
+    container_name: polaris
+    user: root
+    # We don't need export port here
+    # access to container go through nginx under domain polaris.local
+    # ports:
+    #   - "8080:8080"
+    environment:
+      # DEBUG: "true"
+      SERVER_FORWARD_HEADERS_STRATEGY: framework
+      # Access Keycloak through its canonical public issuer URL.
+      # Internally, id.polaris.local resolves to the nginx container.
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: https://id.${POLARIS_DOMAIN}/realms/polaris 
+      SPRING_DATASOURCE_URL: jdbc:postgresql://polaris-db:5432/polaris
+      SPRING_DATASOURCE_DRIVER_CLASS_NAME: org.postgresql.Driver
+      SPRING_DATASOURCE_USERNAME: polaris
+      SPRING_DATASOURCE_PASSWORD: polaris
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: "6379"
+      # Kafka cluster on the internal network (TR-B1); unauthenticated in dev (TR-X1). Any reachable node
+      # bootstraps the client, which then discovers the whole cluster.
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka-1:9092,kafka-2:9092,kafka-3:9092
+      SPRINGDOC_SWAGGER-UI_OAUTH_CLIENT-ID: "polaris-app"
+      SPRINGDOC_SWAGGER-UI_OAUTH_USE-PKCE-WITH-AUTHORIZATION-CODE-GRANT: "true"
+      JAVA_TOOL_OPTIONS: "-Djavax.net.ssl.trustStore=/certs/truststore.jks"
+      MANAGEMENT_OTLP_METRICS_EXPORT_URL: http://otel-collector:4318/v1/metrics
+      MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT: http://otel-collector:4318/v1/traces
+      MANAGEMENT_OPENTELEMETRY_LOGGING_EXPORT_OTLP_ENDPOINT: http://otel-collector:4318/v1/logs
+      # Enable 100% sampling for tracing in this local dev environment.
+      MANAGEMENT_TRACING_SAMPLING_PROBABILITY: "1.0"
+      # LOGGING_LEVEL_IO_OPENTELEMETRY: DEBUG
+      # LOGGING_LEVEL_IO_OPENTELEMETRY_EXPORTER_OTLP: DEBUG
+      LOGGING_LEVEL_ORG_HIBERNATE_ORM_JDBC_BIND: DEBUG
+      MANAGEMENT_ENDPOINT_HEALTH_SHOW-DETAILS: always
+      SPRING_JPA_SHOW-SQL: true
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./docker/nginx/truststore.jks:/certs/truststore.jks:ro
+    depends_on:
+      keycloak:
+        condition: service_healthy
+      otel-collector:
+        condition: service_healthy
+      polaris-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka-1:
+        condition: service_healthy
+      kafka-2:
+        condition: service_healthy
+      kafka-3:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/actuator/health/liveness && curl -f http://localhost:8080/actuator/health/readiness || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - polaris-net
+  polaris-assistant:
+    build:
+      context: .
+      dockerfile: apps/polaris-assistant/Dockerfile
+    container_name: polaris-assistant
+    user: root
+    environment:
+      SERVER_PORT: "8081"
+      SERVER_FORWARD_HEADERS_STRATEGY: framework
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: https://id.${POLARIS_DOMAIN}/realms/polaris
+      SPRING_DATASOURCE_URL: jdbc:postgresql://polaris-db:5432/polaris
+      SPRING_DATASOURCE_DRIVER_CLASS_NAME: org.postgresql.Driver
+      SPRING_DATASOURCE_USERNAME: polaris
+      SPRING_DATASOURCE_PASSWORD: polaris
+      POLARIS_MCP_CORE_URL: http://polaris:8080/mcp
+      POLARIS_MCP_CORE_MESSAGE_ENDPOINT: http://polaris:8080/mcp
+      POLARIS_CORE_API_BASE_URL: http://polaris:8080
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: "6379"
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      TYPESAFE_API_KEY: ${TYPESAFE_API_KEY:-}
+      # Grafana AI Observability generation export (Conversations view). Off (none) unless set in .env; the
+      # gen_ai.* spans and metrics always flow through the collector regardless.
+      AGENTO11Y_PROTOCOL: ${AGENTO11Y_PROTOCOL:-none}
+      AGENTO11Y_ENDPOINT: ${AGENTO11Y_ENDPOINT:-}
+      AGENTO11Y_AUTH_MODE: ${AGENTO11Y_AUTH_MODE:-}
+      AGENTO11Y_AUTH_TENANT_ID: ${AGENTO11Y_AUTH_TENANT_ID:-}
+      AGENTO11Y_AUTH_TOKEN: ${AGENTO11Y_AUTH_TOKEN:-}
+      SPRINGDOC_SWAGGER-UI_OAUTH_CLIENT-ID: "polaris-app"
+      SPRINGDOC_SWAGGER-UI_OAUTH_USE-PKCE-WITH-AUTHORIZATION-CODE-GRANT: "true"
+      JAVA_TOOL_OPTIONS: "-Djavax.net.ssl.trustStore=/certs/truststore.jks"
+      MANAGEMENT_OTLP_METRICS_EXPORT_URL: http://otel-collector:4318/v1/metrics
+      MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT: http://otel-collector:4318/v1/traces
+      MANAGEMENT_OPENTELEMETRY_LOGGING_EXPORT_OTLP_ENDPOINT: http://otel-collector:4318/v1/logs
+      MANAGEMENT_TRACING_SAMPLING_PROBABILITY: "1.0"
+      MANAGEMENT_ENDPOINT_HEALTH_SHOW-DETAILS: always
+    ports:
+      - "8081:8081"
+    volumes:
+      - ./docker/nginx/truststore.jks:/certs/truststore.jks:ro
+    depends_on:
+      keycloak:
+        condition: service_healthy
+      polaris:
+        condition: service_healthy
+      polaris-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      otel-collector:
+        condition: service_healthy
+    healthcheck:
+      # readiness checks db and polarisMcp only; Gemini/TypeSafe outages don't mark the container unhealthy.
+      test: ["CMD-SHELL", "curl -f http://localhost:8081/actuator/health/liveness && curl -f http://localhost:8081/actuator/health/readiness || exit 1"]
+      interval: 10s
+      timeout: 8s
+      retries: 5
+      start_period: 30s
+    networks:
+      - polaris-net
+  polaris-fulfilment-emulator:
+    build:
+      context: .
+      dockerfile: apps/polaris-fulfilment-emulator/Dockerfile
+    container_name: polaris-fulfilment-emulator
+    user: root
+    # Stateless: no database and no API beyond actuator (TR-F4); reachable only inside polaris-net.
+    environment:
+      SERVER_PORT: "8082"
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka-1:9092,kafka-2:9092,kafka-3:9092
+      POLARIS_CORE_API_BASE_URL: http://polaris:8080
+      # Token endpoint through the canonical public issuer URL (id.polaris.local resolves to nginx on polaris-net).
+      POLARIS_FULFILMENT_TOKEN_URI: https://id.${POLARIS_DOMAIN}/realms/polaris/protocol/openid-connect/token
+      POLARIS_FULFILMENT_EMULATOR_SECRET: ${POLARIS_FULFILMENT_EMULATOR_SECRET:-fulfilment-emulator-dev-secret}
+      JAVA_TOOL_OPTIONS: "-Djavax.net.ssl.trustStore=/certs/truststore.jks"
+      MANAGEMENT_OTLP_METRICS_EXPORT_URL: http://otel-collector:4318/v1/metrics
+      MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT: http://otel-collector:4318/v1/traces
+      MANAGEMENT_OPENTELEMETRY_LOGGING_EXPORT_OTLP_ENDPOINT: http://otel-collector:4318/v1/logs
+      MANAGEMENT_TRACING_SAMPLING_PROBABILITY: "1.0"
+    volumes:
+      - ./docker/nginx/truststore.jks:/certs/truststore.jks:ro
+    depends_on:
+      keycloak:
+        condition: service_healthy
+      polaris:
+        condition: service_healthy
+      otel-collector:
+        condition: service_healthy
+      kafka-1:
+        condition: service_healthy
+      kafka-2:
+        condition: service_healthy
+      kafka-3:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8082/actuator/health/liveness && curl -f http://localhost:8082/actuator/health/readiness || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - polaris-net
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    networks:
+      - polaris-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Three-node KRaft cluster (TR-B1): every node is both broker and controller, so the controller quorum
+  # (3 voters) and every partition (3 replicas, min ISR 2) survive the loss of any one node. Topics are
+  # provisioned by their owning service, never auto-created. Experiments: README "Kafka cluster".
+  kafka-1:
+    <<: *kafka-node
+    container_name: kafka-1
+    environment:
+      <<: *kafka-env
+      KAFKA_NODE_ID: "1"
+      KAFKA_LISTENERS: INTERNAL://:9092,CONTROLLER://:9093,HOST://:9094
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka-1:9092,HOST://localhost:9094
+    ports:
+      - "127.0.0.1:9094:9094"
+    volumes:
+      - kafka_1_data:/var/lib/kafka/data
+    healthcheck:
+      <<: *kafka-healthcheck
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server kafka-1:9092 > /dev/null 2>&1"]
+
+  kafka-2:
+    <<: *kafka-node
+    container_name: kafka-2
+    environment:
+      <<: *kafka-env
+      KAFKA_NODE_ID: "2"
+      KAFKA_LISTENERS: INTERNAL://:9092,CONTROLLER://:9093,HOST://:9095
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka-2:9092,HOST://localhost:9095
+    ports:
+      - "127.0.0.1:9095:9095"
+    volumes:
+      - kafka_2_data:/var/lib/kafka/data
+    healthcheck:
+      <<: *kafka-healthcheck
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server kafka-2:9092 > /dev/null 2>&1"]
+
+  kafka-3:
+    <<: *kafka-node
+    container_name: kafka-3
+    environment:
+      <<: *kafka-env
+      KAFKA_NODE_ID: "3"
+      KAFKA_LISTENERS: INTERNAL://:9092,CONTROLLER://:9093,HOST://:9096
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka-3:9092,HOST://localhost:9096
+    ports:
+      - "127.0.0.1:9096:9096"
+    volumes:
+      - kafka_3_data:/var/lib/kafka/data
+    healthcheck:
+      <<: *kafka-healthcheck
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server kafka-3:9092 > /dev/null 2>&1"]
+
+  polaris-db:
+    image: postgres:16
+    container_name: polaris-postgres
+    environment:
+      POSTGRES_DB: polaris
+      POSTGRES_USER: polaris
+      POSTGRES_PASSWORD: polaris
+    volumes:
+      - polaris_db_data:/var/lib/postgresql/data
+    networks:
+      - polaris-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U polaris -d polaris"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  postgres:
+    image: postgres:16
+    container_name: keycloak-postgres
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: keycloak
+    volumes:
+      - keycloak_db_data:/var/lib/postgresql/data
+    networks:
+      - polaris-net
+      
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.2
+    container_name: keycloak
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: keycloak
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      # Substituted into the realm imports (${DEFAULT_PASSWORD}): password of the seeded users, incl. master `grafana-admin`.
+      DEFAULT_PASSWORD: ${DEFAULT_PASSWORD:?set DEFAULT_PASSWORD in .env}
+      POLARIS_FULFILMENT_EMULATOR_SECRET: ${POLARIS_FULFILMENT_EMULATOR_SECRET:-fulfilment-emulator-dev-secret}
+      KC_PROXY_HEADERS: xforwarded
+      KC_HOSTNAME: https://id.${POLARIS_DOMAIN}
+      KC_TRACING_ENABLED: "true"
+      KC_TRACING_ENDPOINT: http://otel-collector:4317
+      KC_TRACING_SERVICE_NAME: keycloak
+      KC_TRACING_SAMPLER_TYPE: traceidratio
+      KC_TRACING_SAMPLER_RATIO: "1.0"
+    # ports:
+    #   - "8081:8080"
+    volumes:
+      # Imported only into an EMPTY database (a fresh volume). Both target names must end in -realm.json: Keycloak then
+      # imports master-realm.json first, in place of its built-in master, and adds the standard admin clients itself.
+      - ./docker/keycloak/master-realm.json:/opt/keycloak/data/import/master-realm.json:ro
+      - ./docker/keycloak/polaris-realm.json:/opt/keycloak/data/import/polaris-realm.json:ro
+    depends_on:
+      postgres:
+        condition: service_started
+      otel-collector:
+        condition: service_healthy
+    networks:
+      - polaris-net
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8080"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  keycloak_db_data:
+  polaris_db_data:
+  kafka_1_data:
+  kafka_2_data:
+  kafka_3_data:

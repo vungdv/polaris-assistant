@@ -1,0 +1,384 @@
+{
+  "realm": "polaris",
+  "enabled": true,
+  "clients": [
+    {
+      "clientId": "polaris-app",
+      "enabled": true,
+      "publicClient": true,
+      "redirectUris": [
+        "https://polaris.local/swagger-ui/index.html",
+        "https://polaris.local/swagger-ui/oauth2-redirect.html"
+      ],
+      "webOrigins": ["https://polaris.local"],
+      "directAccessGrantsEnabled": true,
+      "standardFlowEnabled": true,
+      "serviceAccountsEnabled": false,
+      "protocol": "openid-connect",
+      "fullScopeAllowed": true,
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      },
+      "defaultClientScopes": [
+        "openid", "basic", "profile", "email", "roles", "web-origins"
+      ]
+    },
+    {
+      "clientId": "polaris-local",
+      "enabled": true,
+      "publicClient": true,
+      "redirectUris": [
+        "http://localhost:8080/swagger-ui/index.html",
+        "http://localhost:8080/swagger-ui/oauth2-redirect.html"
+      ],
+      "webOrigins": ["http://localhost:8080"],
+      "directAccessGrantsEnabled": true,
+      "standardFlowEnabled": true,
+      "serviceAccountsEnabled": false,
+      "protocol": "openid-connect",
+      "fullScopeAllowed": true,
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      },
+      "defaultClientScopes": [
+        "openid", "basic", "profile", "email", "roles", "web-origins"
+      ]
+    },
+    {
+      "clientId": "polaris-mcp",
+      "enabled": true,
+      "publicClient": true,
+      "redirectUris": [
+        "http://127.0.0.1:*",
+        "http://localhost:*",
+        "http://127.0.0.1:8085/oauth/callback",
+        "http://localhost:8085/oauth/callback"
+      ],
+      "webOrigins": ["+"],
+      "directAccessGrantsEnabled": true,
+      "standardFlowEnabled": true,
+      "serviceAccountsEnabled": false,
+      "protocol": "openid-connect",
+      "fullScopeAllowed": true,
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "+"
+      },
+      "defaultClientScopes": [
+        "openid", "basic", "profile", "email", "roles", "web-origins"
+      ]
+    },
+    {
+      "clientId": "polaris-api",
+      "name": "Polaris Resource Server",
+      "description": "Holds fine-grained permissions (client roles) consumed by the catalog/order/customer/inventory APIs. Not used for login.",
+      "enabled": true,
+      "publicClient": false,
+      "bearerOnly": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "protocol": "openid-connect"
+    },
+    {
+      "clientId": "polaris-fulfilment-emulator",
+      "name": "Polaris Fulfilment Emulator",
+      "description": "Machine client (client-credentials) used by the fulfilment emulator to claim orders.",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "${POLARIS_FULFILMENT_EMULATOR_SECRET}",
+      "directAccessGrantsEnabled": false,
+      "standardFlowEnabled": false,
+      "serviceAccountsEnabled": true,
+      "protocol": "openid-connect",
+      "fullScopeAllowed": true,
+      "defaultClientScopes": [
+        "openid", "basic", "profile", "email", "roles", "web-origins"
+      ]
+    }
+  ],
+
+  "roles": {
+    "realm": [
+      { "name": "admin", "description": "Administrator with full system privileges",
+        "composite": true,
+        "composites": { "client": { "polaris-api": [
+          "catalog.read", "catalog.write",
+          "order.read", "order.write",
+          "customer.read", "customer.write",
+          "inventory.read", "inventory.write"
+        ]}}
+      },
+
+      { "name": "customer-success", "description": "Customer Success - managing customer profiles, accounts, and relationships",
+        "composite": true,
+        "composites": { "client": { "polaris-api": ["customer.read", "customer.write"] }}
+      },
+      { "name": "customer_success", "description": "Customer Success alias (snake_case)",
+        "composite": true,
+        "composites": { "client": { "polaris-api": ["customer.read", "customer.write"] }}
+      },
+
+      { "name": "product-catalog", "description": "Product Catalog - managing product information, pricing, categories, and catalog hierarchy",
+        "composite": true,
+        "composites": { "client": { "polaris-api": ["catalog.read", "catalog.write"] }}
+      },
+      { "name": "product_catalog", "description": "Product Catalog alias (snake_case)",
+        "composite": true,
+        "composites": { "client": { "polaris-api": ["catalog.read", "catalog.write"] }}
+      },
+
+      { "name": "inventory", "description": "Inventory - managing store stock, warehouses, and product quantity sync",
+        "composite": true,
+        "composites": { "client": { "polaris-api": ["inventory.read", "inventory.write"] }}
+      },
+
+      { "name": "purchase-management", "description": "Purchase Management - handling customer purchases, orders, and fulfillment",
+        "composite": true,
+        "composites": { "client": { "polaris-api": ["order.read", "order.write"] }}
+      },
+      { "name": "purchase_management", "description": "Purchase Management alias (snake_case)",
+        "composite": true,
+        "composites": { "client": { "polaris-api": ["order.read", "order.write"] }}
+      },
+      { "name": "shopper", "description": "Self-service shopper: browses the catalog and places orders for their own linked customer account only",
+        "composite": true,
+        "composites": { "client": { "polaris-api": ["catalog.read", "order.read", "order.write"] }}
+      }
+    ],
+    "client": {
+      "polaris-api": [
+        { "name": "catalog.read", "description": "Read access to the product catalog — search products and look up SKUs" },
+        { "name": "catalog.write", "description": "Write access to the product catalog — manage products and categories" },
+        { "name": "order.read", "description": "Read access to orders — status checks, full details, and order history" },
+        { "name": "order.write", "description": "Write access to orders — place new orders and cancel existing ones" },
+        { "name": "order.fulfil", "description": "Fulfilment access to orders — claim a placed order on behalf of a fulfilment partner" },
+        { "name": "customer.read", "description": "Read access to customer profiles and account information" },
+        { "name": "customer.write", "description": "Write access to customer profiles — update customer details and accounts" },
+        { "name": "inventory.read", "description": "Read access to store inventory, stock levels, and warehouse counts" },
+        { "name": "inventory.write", "description": "Write access to store inventory — adjust stock and sync product counts" }
+      ]
+    }
+  },
+
+  "users": [
+    {
+      "username": "service-account-polaris-fulfilment-emulator",
+      "enabled": true,
+      "serviceAccountClientId": "polaris-fulfilment-emulator",
+      "clientRoles": { "polaris-api": ["order.fulfil"] }
+    },
+    {
+      "username": "testuser",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Test",
+      "lastName": "User",
+      "email": "testuser@novagadgets.local",
+      "credentials": [{ "type": "password", "value": "${DEFAULT_PASSWORD}", "temporary": false }],
+      "realmRoles": [
+        "offline_access", "uma_authorization", "admin",
+        "customer-success", "customer_success",
+        "product-catalog", "product_catalog",
+        "inventory",
+        "purchase-management", "purchase_management"
+      ],
+      "clientRoles": {
+        "account": ["view-profile", "manage-account"]
+      }
+    },
+    {
+      "username": "customersuccess",
+      "enabled": true, "emailVerified": true,
+      "firstName": "Customer", "lastName": "Success",
+      "email": "customersuccess@novagadgets.local",
+      "credentials": [{ "type": "password", "value": "${DEFAULT_PASSWORD}", "temporary": false }],
+      "realmRoles": ["offline_access", "uma_authorization", "customer-success", "customer_success"],
+      "clientRoles": { "account": ["view-profile", "manage-account"] }
+    },
+    {
+      "username": "customer-success",
+      "enabled": true, "emailVerified": true,
+      "firstName": "Customer", "lastName": "Success",
+      "email": "customer-success@novagadgets.local",
+      "credentials": [{ "type": "password", "value": "${DEFAULT_PASSWORD}", "temporary": false }],
+      "realmRoles": ["offline_access", "uma_authorization", "customer-success", "customer_success"],
+      "clientRoles": { "account": ["view-profile", "manage-account"] }
+    },
+    {
+      "username": "productcatalog",
+      "enabled": true, "emailVerified": true,
+      "firstName": "Product", "lastName": "Catalog",
+      "email": "productcatalog@novagadgets.local",
+      "credentials": [{ "type": "password", "value": "${DEFAULT_PASSWORD}", "temporary": false }],
+      "realmRoles": ["offline_access", "uma_authorization", "product-catalog", "product_catalog"],
+      "clientRoles": { "account": ["view-profile", "manage-account"] }
+    },
+    {
+      "username": "product-catalog",
+      "enabled": true, "emailVerified": true,
+      "firstName": "Product", "lastName": "Catalog",
+      "email": "product-catalog@novagadgets.local",
+      "credentials": [{ "type": "password", "value": "${DEFAULT_PASSWORD}", "temporary": false }],
+      "realmRoles": ["offline_access", "uma_authorization", "product-catalog", "product_catalog"],
+      "clientRoles": { "account": ["view-profile", "manage-account"] }
+    },
+    {
+      "username": "inventory",
+      "enabled": true, "emailVerified": true,
+      "firstName": "Inventory", "lastName": "Manager",
+      "email": "inventory@novagadgets.local",
+      "credentials": [{ "type": "password", "value": "${DEFAULT_PASSWORD}", "temporary": false }],
+      "realmRoles": ["offline_access", "uma_authorization", "inventory"],
+      "clientRoles": { "account": ["view-profile", "manage-account"] }
+    },
+    {
+      "username": "purchasemanagement",
+      "enabled": true, "emailVerified": true,
+      "firstName": "Purchase", "lastName": "Management",
+      "email": "purchasemanagement@novagadgets.local",
+      "credentials": [{ "type": "password", "value": "${DEFAULT_PASSWORD}", "temporary": false }],
+      "realmRoles": ["offline_access", "uma_authorization", "purchase-management", "purchase_management"],
+      "clientRoles": { "account": ["view-profile", "manage-account"] }
+    },
+    {
+      "username": "purchase-management",
+      "enabled": true, "emailVerified": true,
+      "firstName": "Purchase", "lastName": "Management",
+      "email": "purchase-management@novagadgets.local",
+      "credentials": [{ "type": "password", "value": "${DEFAULT_PASSWORD}", "temporary": false }],
+      "realmRoles": ["offline_access", "uma_authorization", "purchase-management", "purchase_management"],
+      "clientRoles": { "account": ["view-profile", "manage-account"] }
+    },
+    {
+      "id": "3f0c6a1e-5b2d-4c8e-9a71-0d1e2f3a4b01",
+      "username": "alice.tran",
+      "enabled": true, "emailVerified": true,
+      "firstName": "Alice", "lastName": "Tran",
+      "email": "alice.tran@example.com",
+      "credentials": [{ "type": "password", "value": "${DEFAULT_PASSWORD}", "temporary": false }],
+      "realmRoles": ["offline_access", "uma_authorization", "shopper"],
+      "clientRoles": { "account": ["view-profile", "manage-account"] }
+    },
+    {
+      "id": "3f0c6a1e-5b2d-4c8e-9a71-0d1e2f3a4b02",
+      "username": "ben.nguyen",
+      "enabled": true, "emailVerified": true,
+      "firstName": "Ben", "lastName": "Nguyen",
+      "email": "ben.nguyen@example.com",
+      "credentials": [{ "type": "password", "value": "${DEFAULT_PASSWORD}", "temporary": false }],
+      "realmRoles": ["offline_access", "uma_authorization", "shopper"],
+      "clientRoles": { "account": ["view-profile", "manage-account"] }
+    },
+    {
+      "id": "3f0c6a1e-5b2d-4c8e-9a71-0d1e2f3a4b03",
+      "username": "chi.le",
+      "enabled": true, "emailVerified": true,
+      "firstName": "Chi", "lastName": "Le",
+      "email": "chi.le@example.com",
+      "credentials": [{ "type": "password", "value": "${DEFAULT_PASSWORD}", "temporary": false }],
+      "realmRoles": ["offline_access", "uma_authorization", "shopper"],
+      "clientRoles": { "account": ["view-profile", "manage-account"] }
+    },
+    {
+      "id": "3f0c6a1e-5b2d-4c8e-9a71-0d1e2f3a5b00",
+      "username": "shopper.0",
+      "enabled": true, "emailVerified": true,
+      "firstName": "Shopper", "lastName": "0",
+      "email": "shopper.0@example.com",
+      "credentials": [{ "type": "password", "value": "${DEFAULT_PASSWORD}", "temporary": false }],
+      "realmRoles": ["offline_access", "uma_authorization", "shopper"],
+      "clientRoles": { "account": ["view-profile", "manage-account"] }
+    },
+    {
+      "id": "3f0c6a1e-5b2d-4c8e-9a71-0d1e2f3a5b01",
+      "username": "shopper.1",
+      "enabled": true, "emailVerified": true,
+      "firstName": "Shopper", "lastName": "1",
+      "email": "shopper.1@example.com",
+      "credentials": [{ "type": "password", "value": "${DEFAULT_PASSWORD}", "temporary": false }],
+      "realmRoles": ["offline_access", "uma_authorization", "shopper"],
+      "clientRoles": { "account": ["view-profile", "manage-account"] }
+    },
+    {
+      "id": "3f0c6a1e-5b2d-4c8e-9a71-0d1e2f3a5b02",
+      "username": "shopper.2",
+      "enabled": true, "emailVerified": true,
+      "firstName": "Shopper", "lastName": "2",
+      "email": "shopper.2@example.com",
+      "credentials": [{ "type": "password", "value": "${DEFAULT_PASSWORD}", "temporary": false }],
+      "realmRoles": ["offline_access", "uma_authorization", "shopper"],
+      "clientRoles": { "account": ["view-profile", "manage-account"] }
+    },
+    {
+      "id": "3f0c6a1e-5b2d-4c8e-9a71-0d1e2f3a5b03",
+      "username": "shopper.3",
+      "enabled": true, "emailVerified": true,
+      "firstName": "Shopper", "lastName": "3",
+      "email": "shopper.3@example.com",
+      "credentials": [{ "type": "password", "value": "${DEFAULT_PASSWORD}", "temporary": false }],
+      "realmRoles": ["offline_access", "uma_authorization", "shopper"],
+      "clientRoles": { "account": ["view-profile", "manage-account"] }
+    },
+    {
+      "id": "3f0c6a1e-5b2d-4c8e-9a71-0d1e2f3a5b04",
+      "username": "shopper.4",
+      "enabled": true, "emailVerified": true,
+      "firstName": "Shopper", "lastName": "4",
+      "email": "shopper.4@example.com",
+      "credentials": [{ "type": "password", "value": "${DEFAULT_PASSWORD}", "temporary": false }],
+      "realmRoles": ["offline_access", "uma_authorization", "shopper"],
+      "clientRoles": { "account": ["view-profile", "manage-account"] }
+    },
+    {
+      "id": "3f0c6a1e-5b2d-4c8e-9a71-0d1e2f3a5b05",
+      "username": "shopper.5",
+      "enabled": true, "emailVerified": true,
+      "firstName": "Shopper", "lastName": "5",
+      "email": "shopper.5@example.com",
+      "credentials": [{ "type": "password", "value": "${DEFAULT_PASSWORD}", "temporary": false }],
+      "realmRoles": ["offline_access", "uma_authorization", "shopper"],
+      "clientRoles": { "account": ["view-profile", "manage-account"] }
+    },
+    {
+      "id": "3f0c6a1e-5b2d-4c8e-9a71-0d1e2f3a5b06",
+      "username": "shopper.6",
+      "enabled": true, "emailVerified": true,
+      "firstName": "Shopper", "lastName": "6",
+      "email": "shopper.6@example.com",
+      "credentials": [{ "type": "password", "value": "${DEFAULT_PASSWORD}", "temporary": false }],
+      "realmRoles": ["offline_access", "uma_authorization", "shopper"],
+      "clientRoles": { "account": ["view-profile", "manage-account"] }
+    },
+    {
+      "id": "3f0c6a1e-5b2d-4c8e-9a71-0d1e2f3a5b07",
+      "username": "shopper.7",
+      "enabled": true, "emailVerified": true,
+      "firstName": "Shopper", "lastName": "7",
+      "email": "shopper.7@example.com",
+      "credentials": [{ "type": "password", "value": "${DEFAULT_PASSWORD}", "temporary": false }],
+      "realmRoles": ["offline_access", "uma_authorization", "shopper"],
+      "clientRoles": { "account": ["view-profile", "manage-account"] }
+    },
+    {
+      "id": "3f0c6a1e-5b2d-4c8e-9a71-0d1e2f3a5b08",
+      "username": "shopper.8",
+      "enabled": true, "emailVerified": true,
+      "firstName": "Shopper", "lastName": "8",
+      "email": "shopper.8@example.com",
+      "credentials": [{ "type": "password", "value": "${DEFAULT_PASSWORD}", "temporary": false }],
+      "realmRoles": ["offline_access", "uma_authorization", "shopper"],
+      "clientRoles": { "account": ["view-profile", "manage-account"] }
+    },
+    {
+      "id": "3f0c6a1e-5b2d-4c8e-9a71-0d1e2f3a5b09",
+      "username": "shopper.9",
+      "enabled": true, "emailVerified": true,
+      "firstName": "Shopper", "lastName": "9",
+      "email": "shopper.9@example.com",
+      "credentials": [{ "type": "password", "value": "${DEFAULT_PASSWORD}", "temporary": false }],
+      "realmRoles": ["offline_access", "uma_authorization", "shopper"],
+      "clientRoles": { "account": ["view-profile", "manage-account"] }
+    }
+  ]
+}

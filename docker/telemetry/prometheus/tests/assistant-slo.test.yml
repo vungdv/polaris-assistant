@@ -1,0 +1,117 @@
+# promtool unit tests for rules/assistant-slo.rules.yml (make test-rules).
+rule_files:
+  - ../rules/assistant-slo.rules.yml
+evaluation_interval: 30s
+tests:
+  # chat availability: 1 req/s healthy for 3h, then 100 % 5xx. Fast burn pages once the 1h window is above 14.4 % (about 12 min).
+  - interval: 30s
+    input_series:
+      - series: 'http_server_requests_milliseconds_count{exported_job="Polaris-Assistant",uri="/api/v1/assistant/chat",status="200"}'
+        values: '0+30x360 10800+0x400'
+      - series: 'http_server_requests_milliseconds_count{exported_job="Polaris-Assistant",uri="/api/v1/assistant/chat",status="500"}'
+        values: '0+0x360 0+30x400'
+    alert_rule_test:
+      - eval_time: 175m
+        alertname: AssistantSloBurnFast
+        exp_alerts: []
+      - eval_time: 195m
+        alertname: AssistantSloBurnFast
+        exp_alerts:
+          - exp_labels: {severity: page, service: polaris-assistant, endpoint: chat, sli: availability}
+            exp_annotations:
+              summary: "polaris-assistant chat availability SLO burning at 14.4x or more"
+              description: "Error ratio of chat/availability is above 14.4x its error budget on both the 1h and 5m windows (2% of a 30d budget in 1h)."
+              dashboard_url: "https://grafana.polaris.local/d/polaris-assistant/polaris-assistant"
+
+  # draft-decision latency (2 s, 99 %): every confirm/cancel slower than 2 s after 3h. Bucket le without ".0".
+  - interval: 30s
+    input_series:
+      - series: 'http_server_requests_milliseconds_count{exported_job="Polaris-Assistant",uri="/api/v1/assistant/sessions/{sessionId}/drafts/{draftId}/confirm",status="201"}'
+        values: '0+15x760'
+      - series: 'http_server_requests_milliseconds_bucket{exported_job="Polaris-Assistant",uri="/api/v1/assistant/sessions/{sessionId}/drafts/{draftId}/confirm",status="201",le="2000"}'
+        values: '0+15x360 5400+0x400'
+    alert_rule_test:
+      - eval_time: 175m
+        alertname: AssistantSloBurnFast
+        exp_alerts: []
+      - eval_time: 195m
+        alertname: AssistantSloBurnFast
+        exp_alerts:
+          - exp_labels: {severity: page, service: polaris-assistant, endpoint: draft-decision, sli: latency}
+            exp_annotations:
+              summary: "polaris-assistant draft-decision latency SLO burning at 14.4x or more"
+              description: "Error ratio of draft-decision/latency is above 14.4x its error budget on both the 1h and 5m windows (2% of a 30d budget in 1h)."
+              dashboard_url: "https://grafana.polaris.local/d/polaris-assistant/polaris-assistant"
+
+  # chat latency (30 s, 95 %): a steady 40 % of chats slower than 30 s. Above 6x (30 %) but below 14.4x (72 %):
+  # medium burn only, and only once the 6h window has its history (4.8h of samples).
+  - interval: 30s
+    input_series:
+      - series: 'http_server_requests_milliseconds_count{exported_job="Polaris-Assistant",uri="/api/v1/assistant/chat",status="200"}'
+        values: '0+30x900'
+      - series: 'http_server_requests_milliseconds_bucket{exported_job="Polaris-Assistant",uri="/api/v1/assistant/chat",status="200",le="30000.0"}'
+        values: '0+18x900'
+    alert_rule_test:
+      - eval_time: 240m
+        alertname: AssistantSloBurnMedium
+        exp_alerts: []
+      - eval_time: 300m
+        alertname: AssistantSloBurnMedium
+        exp_alerts:
+          - exp_labels: {severity: page, service: polaris-assistant, endpoint: chat, sli: latency}
+            exp_annotations:
+              summary: "polaris-assistant chat latency SLO burning at 6x or more"
+              description: "Error ratio of chat/latency is above 6x its error budget on both the 6h and 30m windows (5% of a 30d budget in 6h)."
+              dashboard_url: "https://grafana.polaris.local/d/polaris-assistant/polaris-assistant"
+      - eval_time: 300m
+        alertname: AssistantSloBurnFast
+        exp_alerts: []
+
+  # Within budget: 0.5 % chat errors against a 1 % budget never alerts.
+  - interval: 30s
+    input_series:
+      - series: 'http_server_requests_milliseconds_count{exported_job="Polaris-Assistant",uri="/api/v1/assistant/chat",status="200"}'
+        values: '0+30x840'
+      - series: 'http_server_requests_milliseconds_count{exported_job="Polaris-Assistant",uri="/api/v1/assistant/chat",status="500"}'
+        values: '0+0.15x840'
+    alert_rule_test:
+      - eval_time: 420m
+        alertname: AssistantSloBurnFast
+        exp_alerts: []
+      - eval_time: 420m
+        alertname: AssistantSloBurnMedium
+        exp_alerts: []
+    promql_expr_test:
+      - expr: round(sli:error_ratio:window{endpoint="chat",sli="availability",window="1h"}, 0.0001)
+        eval_time: 420m
+        exp_samples:
+          - labels: '{service="polaris-assistant",endpoint="chat",sli="availability",window="1h"}'
+            value: 0.005
+
+  # Idle stack: 100 % errors at one request per 200 s stays below the traffic floor.
+  - interval: 30s
+    input_series:
+      - series: 'http_server_requests_milliseconds_count{exported_job="Polaris-Assistant",uri="/api/v1/assistant/chat",status="500"}'
+        values: '0+0.15x900'
+    alert_rule_test:
+      - eval_time: 200m
+        alertname: AssistantSloBurnFast
+        exp_alerts: []
+
+  # Fresh stack failing from the start: no 1h ratio (so no page) until 48 min of history exist.
+  - interval: 30s
+    input_series:
+      - series: 'http_server_requests_milliseconds_count{exported_job="Polaris-Assistant",uri="/api/v1/assistant/chat",status="500"}'
+        values: '0+30x200'
+    alert_rule_test:
+      - eval_time: 40m
+        alertname: AssistantSloBurnFast
+        exp_alerts: []
+      - eval_time: 60m
+        alertname: AssistantSloBurnFast
+        exp_alerts:
+          - exp_labels: {severity: page, service: polaris-assistant, endpoint: chat, sli: availability}
+            exp_annotations:
+              summary: "polaris-assistant chat availability SLO burning at 14.4x or more"
+              description: "Error ratio of chat/availability is above 14.4x its error budget on both the 1h and 5m windows (2% of a 30d budget in 1h)."
+              dashboard_url: "https://grafana.polaris.local/d/polaris-assistant/polaris-assistant"

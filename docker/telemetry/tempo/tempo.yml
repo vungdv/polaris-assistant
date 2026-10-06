@@ -1,0 +1,65 @@
+server:
+  http_listen_port: 3200
+
+distributor:
+  receivers:
+
+    otlp:
+      protocols:
+
+        grpc:
+          endpoint: 0.0.0.0:4317
+
+        http:
+          endpoint: 0.0.0.0:4318
+
+# Retention: traces 3 days. In Tempo 3.x retention is enforced by the backend scheduler (which decides) and
+# the backend worker (which deletes); both carry block_retention. Tempo has no size cap, so the overrides below bound ingest
+# instead.
+backend_scheduler:
+  provider:
+    retention:
+      interval: 1h
+    compaction:
+      compaction:
+        block_retention: 72h
+backend_worker:
+  compaction:
+    block_retention: 72h
+
+storage:
+  trace:
+    backend: local
+
+    local:
+      path: /var/tempo/traces
+
+# Span-derived metrics: span-metrics + service-graphs, remote-written to
+# Prometheus (which enables the remote-write receiver and exemplar storage).
+metrics_generator:
+  registry:
+    external_labels:
+      source: tempo
+  storage:
+    path: /var/tempo/generator/wal
+    remote_write:
+      - url: http://prometheus:9090/api/v1/write
+        send_exemplars: true
+  processor:
+    span_metrics:
+      # error + mcp.category: MCP tool calls set error=true on isError results (not only on exceptions),
+      # and mcp.category splits catalog from order tools on the Polaris Product Catalog & Orders dashboard.
+      dimensions: [http.request.method, http.response.status_code, http.route, polaris.sse, error, mcp.category]
+      enable_target_info: true
+    service_graphs:
+      dimensions: []
+
+overrides:
+  defaults:
+    ingestion:
+      rate_limit_bytes: 15000000
+      burst_size_bytes: 20000000
+    global:
+      max_bytes_per_trace: 5000000
+    metrics_generator:
+      processors: [service-graphs, span-metrics]

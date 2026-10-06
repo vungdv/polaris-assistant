@@ -1,0 +1,153 @@
+[
+  {
+    "id": "general.conversation",
+    "description": "User engages in greetings, small talk, or general inquiries unrelated to catalog or orders",
+    "examples": [
+      "hello",
+      "hi there",
+      "who are you",
+      "who are you?",
+      "help me",
+      "how are you",
+      "good morning",
+      "what can you do",
+      "help"
+    ],
+    "allowedTools": [],
+    "confidenceThreshold": 0.50
+  },
+  {
+    "id": "catalog.product.search",
+    "description": "User wants to browse or search for products by keyword, category, or price range",
+    "examples": [
+      "show me running shoes under $100",
+      "what electronics do you have in stock",
+      "find chargers",
+      "search products",
+      "browse items",
+      "find chargers in stock",
+      "browse electronics catalog",
+      "search for wireless headphones",
+      "Find wireless chargers"
+    ],
+    "allowedTools": [
+      "search_available_products",
+      "search_products",
+      "search_promotions"
+    ],
+    "confidenceThreshold": 0.80
+  },
+  {
+    "id": "catalog.product.lookup",
+    "description": "User wants details on a specific, already-identified product by SKU",
+    "examples": [
+      "tell me more about SM-PH-001",
+      "is PROD-001 in stock",
+      "check sku NG-CHARGER-02",
+      "product details for SM-PH-001",
+      "is SKU NG-CHARGER-02 in stock",
+      "product details for AP-MACBOOK-16"
+    ],
+    "allowedTools": [
+      "get_product_by_sku"
+    ],
+    "confidenceThreshold": 0.85
+  },
+  {
+    "id": "information.lookup.order.status",
+    "description": "User wants a quick status check on a single known order — not full details",
+    "examples": [
+      "where is my order ORD-1001",
+      "status of order 1234",
+      "track order ORD-55",
+      "check status of my order",
+      "track order ORD-5555"
+    ],
+    "allowedTools": [
+      "get_order_status"
+    ],
+    "confidenceThreshold": 0.85
+  },
+  {
+    "id": "information.lookup.order.details",
+    "description": "User wants full order contents — line items, pricing, fulfillment — not just status",
+    "examples": [
+      "what did I order in ORD-1001",
+      "show me the full details of my last order",
+      "view details for order ORD-999",
+      "order contents for ORD-1001"
+    ],
+    "allowedTools": [
+      "get_order_details"
+    ],
+    "confidenceThreshold": 0.85
+  },
+  {
+    "id": "information.lookup.order.history",
+    "description": "User wants to see multiple past orders, optionally filtered by status",
+    "examples": [
+      "show my order history",
+      "list my cancelled orders",
+      "show all my previous purchases",
+      "what are my past orders",
+      "previous purchases"
+    ],
+    "allowedTools": [
+      "list_customer_orders"
+    ],
+    "confidenceThreshold": 0.80
+  },
+  {
+    "id": "customer.lookup.by_name",
+    "description": "User wants to find, look up, or identify a customer by name",
+    "examples": [
+      "find customer Alice",
+      "look up customer Tran",
+      "search customer named Bob",
+      "who is customer Chi",
+      "I am Alice Tran",
+      "customer lookup for Alice",
+      "my name is Alice Tran"
+    ],
+    "allowedTools": [
+      "search_customers_by_name"
+    ],
+    "confidenceThreshold": 0.85
+  },
+  {
+    "id": "commerce.order.place",
+    "description": "User wants to place a new order for one or more items",
+    "examples": [
+      "order 2 of NG-EARBUD-01",
+      "buy the wireless earbuds",
+      "place order for item PROD-1",
+      "I want to buy this",
+      "order 2 of NG-EARBUD-01 for Alice",
+      "place order for Alice Tran",
+      "change the draft to 3 chargers",
+      "discard the order draft"
+    ],
+    "allowedTools": [
+      "stage_order_draft",
+      "discard_order_draft",
+      "search_available_products",
+      "search_customers_by_name"
+    ],
+    "confidenceThreshold": 0.92
+  },
+  {
+    "id": "commerce.order.cancel",
+    "description": "User wants to cancel an existing order",
+    "examples": [
+      "cancel my order ORD-1001",
+      "I want to cancel that last order",
+      "please cancel order 1234",
+      "abort order ORD-999"
+    ],
+    "allowedTools": [
+      "cancel_order",
+      "discard_order_draft"
+    ],
+    "confidenceThreshold": 0.92
+  }
+]

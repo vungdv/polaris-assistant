@@ -1,0 +1,109 @@
+# Polaris-Assistant SLOs per endpoint, from the app's http.server.requests histogram (milliseconds; the
+# explicit buckets come from management.metrics.distribution.slo in the assistant's application.yml).
+# Every series carries service="polaris-assistant", endpoint and sli (availability | latency).
+#
+#   endpoint        routes                                   availability     latency
+#   chat            POST /api/v1/assistant/chat              99.0 % non-5xx   95 % <= 30 s
+#   draft-decision  POST .../drafts/{draftId}/confirm|cancel 99.5 % non-5xx   99 % <= 2 s
+#
+# chat waits on Gemini and TypeSafe (observed average about 16 s), so its threshold sits at the model timeout;
+# confirm/cancel are plain calls to Order Management. 4xx (rejected drafts, invalid input) are not SLO errors.
+# A latency threshold must be one of the app's bucket bounds; le is matched with an optional ".0" because
+# Prometheus 3 normalises le to float form.
+#
+#   sli:requests:rate5m       total requests per second
+#   sli:bad_requests:rate5m   bad requests per second (5xx, or slower than the threshold)
+#   sli:error_ratio:window    bad / total over window = 5m | 30m | 1h | 6h
+#   sli:error_budget:ratio    1 - target
+groups:
+  - name: assistant-sli-base
+    interval: 30s
+    rules:
+      - record: sli:requests:rate5m
+        expr: sum(rate(http_server_requests_milliseconds_count{exported_job="Polaris-Assistant",uri="/api/v1/assistant/chat"}[5m]))
+        labels: {service: polaris-assistant, endpoint: chat, sli: availability}
+      - record: sli:bad_requests:rate5m
+        expr: sum(rate(http_server_requests_milliseconds_count{exported_job="Polaris-Assistant",uri="/api/v1/assistant/chat",status=~"5.."}[5m])) or (sum(rate(http_server_requests_milliseconds_count{exported_job="Polaris-Assistant",uri="/api/v1/assistant/chat"}[5m])) * 0)
+        labels: {service: polaris-assistant, endpoint: chat, sli: availability}
+      - record: sli:requests:rate5m
+        expr: sum(rate(http_server_requests_milliseconds_count{exported_job="Polaris-Assistant",uri="/api/v1/assistant/chat"}[5m]))
+        labels: {service: polaris-assistant, endpoint: chat, sli: latency}
+      - record: sli:bad_requests:rate5m
+        expr: sum(rate(http_server_requests_milliseconds_count{exported_job="Polaris-Assistant",uri="/api/v1/assistant/chat"}[5m])) - sum(rate(http_server_requests_milliseconds_bucket{exported_job="Polaris-Assistant",uri="/api/v1/assistant/chat",le=~"30000(\\.0)?"}[5m]))
+        labels: {service: polaris-assistant, endpoint: chat, sli: latency}
+
+      - record: sli:requests:rate5m
+        expr: sum(rate(http_server_requests_milliseconds_count{exported_job="Polaris-Assistant",uri=~"/api/v1/assistant/sessions/.+/drafts/.+/(confirm|cancel)"}[5m]))
+        labels: {service: polaris-assistant, endpoint: draft-decision, sli: availability}
+      - record: sli:bad_requests:rate5m
+        expr: sum(rate(http_server_requests_milliseconds_count{exported_job="Polaris-Assistant",uri=~"/api/v1/assistant/sessions/.+/drafts/.+/(confirm|cancel)",status=~"5.."}[5m])) or (sum(rate(http_server_requests_milliseconds_count{exported_job="Polaris-Assistant",uri=~"/api/v1/assistant/sessions/.+/drafts/.+/(confirm|cancel)"}[5m])) * 0)
+        labels: {service: polaris-assistant, endpoint: draft-decision, sli: availability}
+      - record: sli:requests:rate5m
+        expr: sum(rate(http_server_requests_milliseconds_count{exported_job="Polaris-Assistant",uri=~"/api/v1/assistant/sessions/.+/drafts/.+/(confirm|cancel)"}[5m]))
+        labels: {service: polaris-assistant, endpoint: draft-decision, sli: latency}
+      - record: sli:bad_requests:rate5m
+        expr: sum(rate(http_server_requests_milliseconds_count{exported_job="Polaris-Assistant",uri=~"/api/v1/assistant/sessions/.+/drafts/.+/(confirm|cancel)"}[5m])) - sum(rate(http_server_requests_milliseconds_bucket{exported_job="Polaris-Assistant",uri=~"/api/v1/assistant/sessions/.+/drafts/.+/(confirm|cancel)",le=~"2000(\\.0)?"}[5m]))
+        labels: {service: polaris-assistant, endpoint: draft-decision, sli: latency}
+
+  # Error ratio per burn-rate window: sum_over_time of the 5m base rates (smoothed by up to 5 minutes). 0/0 (no
+  # traffic) yields no sample. History guard: a window is only produced once 80 % of its 30s samples exist, so a
+  # freshly (re)started stack does not compute a "1h" ratio from a few minutes and page on it.
+  - name: assistant-sli-windows
+    interval: 30s
+    rules:
+      - record: sli:error_ratio:window
+        expr: sli:bad_requests:rate5m{service="polaris-assistant"} / sli:requests:rate5m{service="polaris-assistant"}
+        labels: {window: "5m"}
+      - record: sli:error_ratio:window
+        expr: |
+          (sum by (service, endpoint, sli) (sum_over_time(sli:bad_requests:rate5m{service="polaris-assistant"}[30m])) / sum by (service, endpoint, sli) (sum_over_time(sli:requests:rate5m{service="polaris-assistant"}[30m])))
+          and on (service, endpoint, sli) (count_over_time(sli:requests:rate5m{service="polaris-assistant"}[30m]) >= 48)
+        labels: {window: "30m"}
+      - record: sli:error_ratio:window
+        expr: |
+          (sum by (service, endpoint, sli) (sum_over_time(sli:bad_requests:rate5m{service="polaris-assistant"}[1h])) / sum by (service, endpoint, sli) (sum_over_time(sli:requests:rate5m{service="polaris-assistant"}[1h])))
+          and on (service, endpoint, sli) (count_over_time(sli:requests:rate5m{service="polaris-assistant"}[1h]) >= 96)
+        labels: {window: "1h"}
+      - record: sli:error_ratio:window
+        expr: |
+          (sum by (service, endpoint, sli) (sum_over_time(sli:bad_requests:rate5m{service="polaris-assistant"}[6h])) / sum by (service, endpoint, sli) (sum_over_time(sli:requests:rate5m{service="polaris-assistant"}[6h])))
+          and on (service, endpoint, sli) (count_over_time(sli:requests:rate5m{service="polaris-assistant"}[6h]) >= 576)
+        labels: {window: "6h"}
+
+  - name: assistant-slo-targets
+    interval: 30s
+    rules:
+      - {record: "sli:error_budget:ratio", expr: "vector(0.01)",  labels: {service: polaris-assistant, endpoint: chat, sli: availability}}
+      - {record: "sli:error_budget:ratio", expr: "vector(0.05)",  labels: {service: polaris-assistant, endpoint: chat, sli: latency}}
+      - {record: "sli:error_budget:ratio", expr: "vector(0.005)", labels: {service: polaris-assistant, endpoint: draft-decision, sli: availability}}
+      - {record: "sli:error_budget:ratio", expr: "vector(0.01)",  labels: {service: polaris-assistant, endpoint: draft-decision, sli: latency}}
+
+  # Multi-window, multi-burn-rate alerts (Google SRE workbook): both the long and the short window must burn
+  # above the factor, with at least ~1 request per 100 s so a single failure on an idle stack does not page.
+  # Burn factors are against a 30-day budget; Prometheus keeps 15 days, so the dashboard shows the budget over
+  # the selected time range instead. No Alertmanager: alerts show in Grafana Alerting (data source-managed rules).
+  - name: assistant-slo-burn
+    rules:
+      - alert: AssistantSloBurnFast
+        expr: |
+          (sli:error_ratio:window{service="polaris-assistant",window="1h"} > on (service, endpoint, sli) (14.4 * sli:error_budget:ratio))
+          and on (service, endpoint, sli) (sli:error_ratio:window{window="5m"} > on (service, endpoint, sli) (14.4 * sli:error_budget:ratio))
+          and on (service, endpoint, sli) (sli:requests:rate5m > 0.01)
+        labels:
+          severity: page
+        annotations:
+          summary: "polaris-assistant {{ $labels.endpoint }} {{ $labels.sli }} SLO burning at 14.4x or more"
+          description: "Error ratio of {{ $labels.endpoint }}/{{ $labels.sli }} is above 14.4x its error budget on both the 1h and 5m windows (2% of a 30d budget in 1h)."
+          dashboard_url: "https://grafana.polaris.local/d/polaris-assistant/polaris-assistant"
+
+      - alert: AssistantSloBurnMedium
+        expr: |
+          (sli:error_ratio:window{service="polaris-assistant",window="6h"} > on (service, endpoint, sli) (6 * sli:error_budget:ratio))
+          and on (service, endpoint, sli) (sli:error_ratio:window{window="30m"} > on (service, endpoint, sli) (6 * sli:error_budget:ratio))
+          and on (service, endpoint, sli) (sli:requests:rate5m > 0.01)
+        labels:
+          severity: page
+        annotations:
+          summary: "polaris-assistant {{ $labels.endpoint }} {{ $labels.sli }} SLO burning at 6x or more"
+          description: "Error ratio of {{ $labels.endpoint }}/{{ $labels.sli }} is above 6x its error budget on both the 6h and 30m windows (5% of a 30d budget in 6h)."
+          dashboard_url: "https://grafana.polaris.local/d/polaris-assistant/polaris-assistant"

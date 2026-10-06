@@ -1,0 +1,104 @@
+spring:
+  application:
+    name: Polaris
+  threads:
+    virtual:
+      enabled: true
+  datasource:
+    url: jdbc:h2:file:./data/polaris;AUTO_SERVER=TRUE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate   # Flyway owns the schema, Hibernate only validates it
+    properties:
+      hibernate:
+        format_sql: true  
+    show-sql: true
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+  data:
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST:localhost}
+      port: ${SPRING_DATA_REDIS_PORT:6379}
+      password: ${SPRING_DATA_REDIS_PASSWORD:}
+  kafka:
+    # Host default for `make run` (the cluster's HOST listeners); compose sets the internal kafka-N:9092 list.
+    bootstrap-servers: localhost:9094,localhost:9095,localhost:9096
+    admin:
+      # Bounds topic provisioning when the broker is down (at startup, and retried by the outbox transport).
+      operation-timeout: 10s
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: https://id.polaris.local/realms/polaris
+
+polaris:
+  ai:
+    provider: gemini
+    api-key: ${GEMINI_API_KEY:${POLARIS_AI_API_KEY:}}
+    model: ${POLARIS_AI_MODEL:gemini-3.6-flash}
+  cache:
+    products:
+      local-ttl: ${POLARIS_CACHE_PRODUCTS_LOCAL_TTL:30s}
+      local-max-size: ${POLARIS_CACHE_PRODUCTS_LOCAL_MAX_SIZE:5000}
+      remote-ttl: ${POLARIS_CACHE_PRODUCTS_REMOTE_TTL:10m}
+springdoc:
+  api-docs:
+    enabled: true
+  swagger-ui:
+    enabled: true
+    oauth:
+      client-id: ${SPRINGDOC_SWAGGER_UI_OAUTH_CLIENT_ID:polaris-local}
+      use-pkce-with-authorization-code-grant: true
+    urls:
+      - name: Product Catalog API
+        url: /v3/api-docs
+      - name: Assistant API
+        url: /v3/api-docs/assistant
+
+management:
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      # Readiness reflects whether this instance can actually serve traffic, which requires a
+      # working database connection on top of the base readinessState. "db" is the id Spring
+      # Boot auto-assigns to the DataSourceHealthIndicator it creates for the configured
+      # DataSource (Postgres in docker/prod, H2 locally) - no extra wiring needed.
+      group:
+        readiness:
+          include: readinessState,db
+  endpoints:
+    web:
+      exposure:
+        include: health,info # ,metrics,prometheus
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
+  tracing:
+    sampling:
+      probability: 1.0 
+  otlp:
+    metrics:
+      export:
+        url: http://localhost:4318/v1/metrics
+  opentelemetry:
+    tracing:
+      export:
+        otlp:
+          endpoint: http://localhost:4318/v1/traces
+    logging:
+      export:
+        otlp:
+          endpoint: http://localhost:4318/v1/logs

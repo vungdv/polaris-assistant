@@ -1,0 +1,29 @@
+# GenAI token price table, USD per token, for the local "AI Observability" dashboard cost panels.
+# Grafana Cloud AI Observability prices tokens server-side from gen_ai.client.token.usage + model; locally the
+# dashboard multiplies the same metric by these series:
+#   cost = sum(increase(gen_ai_client_token_usage_sum[..]) * on(provider, model, token type) group_left price)
+#
+# Token semantics are "inclusive" (gen_ai_token_semantics="inclusive"): input already counts cached tokens, so
+# cache_read is priced as the DISCOUNT from the input rate (cached - input, a negative number), and reasoning
+# (thinking) tokens are billed at the output rate.
+# A model without rows here is simply left out of the cost panels (no guessed price).
+#
+# Source: https://ai.google.dev/gemini-api/docs/pricing (paid tier, standard), checked 2026-10-02.
+# gemini-3.6-flash: input $0.75, output incl. thinking $3.75, cached input $0.075 per 1M tokens,
+# valid through 2026-12-31; from 2027-01-01 they double ($1.50 / $7.50 / $0.15): update the values then.
+groups:
+  - name: genai-token-prices
+    interval: 1m
+    rules:
+      - record: polaris:gen_ai_token_price_usd
+        expr: vector(0.75e-6)
+        labels: {gen_ai_provider_name: gemini, gen_ai_request_model: gemini-3.6-flash, gen_ai_token_type: input}
+      - record: polaris:gen_ai_token_price_usd
+        expr: vector(3.75e-6)
+        labels: {gen_ai_provider_name: gemini, gen_ai_request_model: gemini-3.6-flash, gen_ai_token_type: output}
+      - record: polaris:gen_ai_token_price_usd
+        expr: vector(3.75e-6)
+        labels: {gen_ai_provider_name: gemini, gen_ai_request_model: gemini-3.6-flash, gen_ai_token_type: reasoning}
+      - record: polaris:gen_ai_token_price_usd
+        expr: vector(0.075e-6 - 0.75e-6)
+        labels: {gen_ai_provider_name: gemini, gen_ai_request_model: gemini-3.6-flash, gen_ai_token_type: cache_read}

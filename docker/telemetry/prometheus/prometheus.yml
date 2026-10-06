@@ -1,0 +1,36 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 30s
+
+# Recording rules: GenAI token price table for the AI Observability dashboard cost panels.
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+scrape_configs:
+  # Application metrics re-exported by the collector's prometheus exporter
+  - job_name: 'otel-collector'
+    scrape_interval: 10s
+    static_configs:
+      - targets: ['otel-collector:8889']
+
+  # Collector self-metrics (accepted/refused/dropped, exporter queue and failures)
+  - job_name: 'otel-collector-self'
+    scrape_interval: 10s
+    static_configs:
+      - targets: ['otel-collector:8888']
+
+  - job_name: 'tempo'
+    static_configs:
+      - targets: ['tempo:3200']
+
+  - job_name: 'loki'
+    static_configs:
+      - targets: ['loki:3100']
+
+  - job_name: 'grafana'
+    static_configs:
+      - targets: ['grafana:3000']
+
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']

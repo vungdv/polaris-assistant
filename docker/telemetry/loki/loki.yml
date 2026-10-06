@@ -1,0 +1,65 @@
+auth_enabled: false
+
+server:
+  http_listen_port: 3100
+  grpc_listen_port: 9096
+
+common:
+  path_prefix: /loki
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+
+schema_config:
+  configs:
+    - from: 2024-01-01
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+
+storage_config:
+  filesystem:
+    directory: /loki/chunks
+
+# Retention: logs 7 days (limits_config.retention_period), enforced by the compactor, which deletes
+# expired chunks after retention_delete_delay. Ingest caps below bound disk growth per second.
+compactor:
+  working_directory: /loki/compactor
+  compactor_ring:
+    kvstore:
+      store: inmemory
+  retention_enabled: true
+  delete_request_store: filesystem
+  retention_delete_delay: 2h
+  compaction_interval: 10m
+
+limits_config:
+  retention_period: 168h
+  # Disk-growth safeguards: refuse ingest beyond these rates (the collector retries and then drops, never blocks the apps).
+  ingestion_rate_mb: 8
+  ingestion_burst_size_mb: 16
+  per_stream_rate_limit: 3MB
+  per_stream_rate_limit_burst: 15MB
+  allow_structured_metadata: true
+  volume_enabled: true
+  # Cardinality guardrails: only these resource attributes are
+  # index labels; everything else is structured metadata (not indexed). Hard limits below.
+  otlp_config:
+    resource_attributes:
+      ignore_defaults: true
+      attributes_config:
+        - action: index_label
+          attributes:
+            - service.name
+            - service.namespace
+            - deployment.environment
+  max_label_names_per_series: 8
+  max_label_name_length: 64
+  max_label_value_length: 256
+  max_global_streams_per_user: 5000
+  max_streams_per_user: 0
+  max_structured_metadata_entries_count: 128

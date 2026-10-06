@@ -1,0 +1,71 @@
+# Build outputs (keep only what's needed for multi-stage build)
+target/
+build/
+out/
+
+# Not related folders
+telemetry/
+data/
+nginx/
+keycloak/
+.vscode/
+
+# Maven
+.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**
+!**/src/test/**
+
+# Gradle
+.gradle/
+gradle/wrapper/gradle-wrapper.jar
+gradlew
+gradlew.bat
+
+# IDE files
+.idea/
+*.iml
+*.iws
+.vscode/
+.settings/
+.classpath
+.project
+*.launch
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Logs
+logs/
+*.log
+
+# Environment / secrets
+.env
+.env.*
+*.pem
+*.key
+
+# Docker files themselves
+Dockerfile
+docker-compose*.yml
+.dockerignore
+
+# Documentation
+README.md
+CHANGELOG.md
+docs/
+
+# Test reports
+**/target/surefire-reports/
+**/target/test-classes/
+coverage/
+
+# Temp files
+*.tmp
+*.bak
+*.swp

@@ -1,0 +1,219 @@
+services:
+
+  prometheus:
+    image: prom/prometheus:v3.14.0
+    container_name: prometheus
+
+    # No published ports: reachable on polaris-net only. Host access for local tooling is the opt-in
+    # docker-compose.dev-ports.yml (loopback only).
+    networks:
+      - polaris-net
+
+    volumes:
+      - ./docker/telemetry/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./docker/telemetry/prometheus/rules:/etc/prometheus/rules:ro
+      - prometheus-data:/prometheus
+
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      # Tempo metrics_generator remote-writes span/service-graph metrics here
+      - "--web.enable-remote-write-receiver"
+      - "--enable-feature=exemplar-storage"
+      # Retention: metrics 15 days AND a 5GB disk cap, whichever is hit first.
+      - "--storage.tsdb.retention.time=15d"
+      - "--storage.tsdb.retention.size=5GB"
+
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9090/-/ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
+
+  loki:
+    image: grafana/loki:3.1.0
+    container_name: loki
+
+    networks:
+      - polaris-net
+
+    volumes:
+      - ./docker/telemetry/loki/loki.yml:/etc/loki/config.yml
+      - loki-data:/loki
+
+    command:
+      - "-config.file=/etc/loki/config.yml"
+
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3100/ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 20s
+  tempo:
+    build:
+      context: ./docker/telemetry/healthcheck
+      args:
+        BASE: grafana/tempo:3.0.0
+    image: polaris/tempo-hc:3.0.0
+    container_name: tempo
+
+    networks:
+      - polaris-net
+
+    volumes:
+      - ./docker/telemetry/tempo/tempo.yml:/etc/tempo/config.yml
+      - tempo-data:/var/tempo
+
+    command:
+      - "-config.file=/etc/tempo/config.yml"
+
+    healthcheck:
+      test: ["CMD", "/busybox", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3200/ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 30s
+
+  otel-collector:
+    build:
+      context: ./docker/telemetry/healthcheck
+      args:
+        BASE: otel/opentelemetry-collector-contrib:0.160.0
+    image: polaris/otelcol-contrib-hc:0.160.0
+    container_name: otel-collector
+
+    command:
+      - "--config=/etc/otelcol-contrib/config.yaml"
+
+    volumes:
+      - ./docker/telemetry/otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml
+
+    # Grafana Cloud export (otlp_http/grafana_cloud): stack https://sincerelorry365.grafana.net/
+    # Values from Grafana Cloud portal -> stack -> OpenTelemetry -> Configure.
+    environment:
+      GRAFANA_CLOUD_OTLP_ENDPOINT: ${GRAFANA_CLOUD_OTLP_ENDPOINT:?set GRAFANA_CLOUD_OTLP_ENDPOINT in .env}
+      GRAFANA_CLOUD_INSTANCE_ID: ${GRAFANA_CLOUD_INSTANCE_ID:?set GRAFANA_CLOUD_INSTANCE_ID in .env}
+      GRAFANA_CLOUD_API_TOKEN: ${GRAFANA_CLOUD_API_TOKEN:?set GRAFANA_CLOUD_API_TOKEN in .env}
+
+    # OTLP 4317 (gRPC) / 4318 (HTTP) and the Prometheus exporter 8889 are internal to polaris-net. Host-run apps
+    # (`make run`) and k6 use the loopback publish in docker-compose.dev-ports.yml.
+    networks:
+      polaris-net:
+        # Fixed address: nginx (extra_hosts) resolves the Collector without DNS, so the
+        # gateway can start while the Collector is down.
+        ipv4_address: 172.29.250.10
+
+    healthcheck:
+      test: ["CMD", "/busybox", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:13133/"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
+
+    depends_on:
+      tempo:
+        condition: service_healthy
+      loki:
+        condition: service_healthy
+
+  grafana:
+    image: grafana/grafana:13.2.1
+    container_name: grafana
+
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://127.0.0.1:3000/api/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 30s
+
+    # Not published: Grafana is reached only through the gateway, https://grafana.polaris.local.
+    networks:
+      - polaris-net
+
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./docker/telemetry/grafana/provisioning:/etc/grafana/provisioning
+      - ./docker/nginx/rootCA.pem:/etc/grafana/certs/rootCA.pem:ro
+
+    environment:
+      - GF_SERVER_ROOT_URL=https://grafana.polaris.local/
+      - GF_AUTH_GENERIC_OAUTH_ENABLED=true
+      - GF_AUTH_GENERIC_OAUTH_NAME=Keycloak
+      - GF_AUTH_GENERIC_OAUTH_ALLOW_SIGN_UP=true
+      - GF_AUTH_GENERIC_OAUTH_CLIENT_ID=grafana
+      # Public client: Keycloak `grafana` has no secret; the authorization-code flow is protected by PKCE (S256).
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${DEFAULT_PASSWORD:?set DEFAULT_PASSWORD in .env}
+      - GF_AUTH_GENERIC_OAUTH_SCOPES=openid email profile roles
+      # Staff SSO lives in the Keycloak master realm (client imported from docker/keycloak/master-realm.json), apart from the polaris
+      # customer realm: shoppers and other polaris users have no account Grafana can see.
+      - GF_AUTH_GENERIC_OAUTH_AUTH_URL=https://id.polaris.local/realms/master/protocol/openid-connect/auth
+      - GF_AUTH_GENERIC_OAUTH_TOKEN_URL=https://id.polaris.local/realms/master/protocol/openid-connect/token
+      - GF_AUTH_GENERIC_OAUTH_API_URL=https://id.polaris.local/realms/master/protocol/openid-connect/userinfo
+      - GF_AUTH_GENERIC_OAUTH_TLS_CLIENT_CA=/etc/grafana/certs/rootCA.pem
+      - GF_AUTH_GENERIC_OAUTH_TLS_SKIP_VERIFY_INSECURE=false
+      - GF_AUTH_GENERIC_OAUTH_USE_PKCE=true
+      # Role comes from the master realm `grafana` client roles only; master realm roles are ignored (the master `admin` realm
+      # role is the Keycloak superuser, not a Grafana grant). No fallback role and strict mode: a user without a
+      # grafana client role cannot log in to Grafana at all. `|| [] literal` because JMESPath contains() errors on a missing claim.
+      - GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH=contains(resource_access.grafana.roles || `[]`, 'admin') && 'Admin' || contains(resource_access.grafana.roles || `[]`, 'editor') && 'Editor' || contains(resource_access.grafana.roles || `[]`, 'viewer') && 'Viewer'
+      - GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_STRICT=true
+      - GF_AUTH_GENERIC_OAUTH_ALLOW_ASSIGN_GRAFANA_ADMIN=true
+      - GF_AUTH_GENERIC_OAUTH_AUTO_LOGIN=false
+      - GF_AUTH_DISABLE_LOGIN_FORM=false
+
+  gcx-cli:
+    image: debian:bookworm-slim
+    container_name: gcx-cli
+    working_dir: /root
+    # Installs curl + ca-certificates once, then runs the entrypoint which
+    # installs gcx itself and idles so `docker exec` always has something
+    # to attach to.
+    entrypoint: ["sh", "-c", "apt-get update && apt-get install -y --no-install-recommends curl ca-certificates && sh /entrypoint.sh"]
+    volumes:
+      - ./docker/telemetry/gcx/entrypoint.sh:/entrypoint.sh:ro
+      - gcx-bin:/root/.local/bin
+      - gcx-config:/root/.config/gcx
+    environment:
+      - GCX_INSTALL_DIR=/root/.local/bin
+      # Makes gcx visible to `docker exec` shells too, not just the
+      # entrypoint script's own process.
+      - PATH=/root/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+       # gcx reads these directly (no `gcx config set` needed) to talk to
+      # the local Grafana OSS instance in this stack.
+      - GRAFANA_SERVER=http://grafana:3000
+      - GRAFANA_ORG_ID=1
+      # Quick-start basic auth using Grafana's default admin account.
+      # Swap these for GRAFANA_TOKEN (a service account token) once you've
+      # created one — see the note below.
+      - GRAFANA_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GRAFANA_PASSWORD=${DEFAULT_PASSWORD:?set DEFAULT_PASSWORD in .env}
+    networks:
+      - polaris-net
+    depends_on:
+      grafana:
+        condition: service_healthy
+
+  nginx:
+    depends_on:
+      grafana:
+        condition: service_healthy
+
+volumes:
+
+  prometheus-data:
+  loki-data:
+  tempo-data:
+  grafana-data:
+  gcx-bin:
+  gcx-config:
+
+networks:
+  polaris-net:
+    ipam:
+      config:
+        - subnet: 172.29.250.0/24
+          # dynamic addresses come from the upper half; the lower half is for fixed addresses
+          ip_range: 172.29.250.128/25

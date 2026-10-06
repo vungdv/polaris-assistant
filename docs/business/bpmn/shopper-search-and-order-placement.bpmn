@@ -1,0 +1,289 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" id="Definitions_Process_ShopperOrderPlacement" targetNamespace="http://bpmn.io/schema/bpmn" exporter="Camunda Modeler" exporterVersion="5.22.0">
+  <bpmn:process id="Process_ShopperOrderPlacement" name="Shopper Search &amp; Order Placement" isExecutable="false">
+    <bpmn:documentation>How does a shopper search for a product and place an order with the help of an AI Assistant?</bpmn:documentation>
+    <bpmn:laneSet id="Process_ShopperOrderPlacement_laneSet">
+      <bpmn:lane id="Lane_Shopper" name="Shopper">
+        <bpmn:flowNodeRef>S_Start</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>S_Ask</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>S_Review</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>S_Request</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>S_Confirm</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>S_End</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_Assistant" name="AI Assistant">
+        <bpmn:flowNodeRef>A_Intent</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>A_Present</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>A_Stage</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>A_Draft</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>A_Gate</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>A_Execute</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>A_ConfirmCard</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>A_EndDeclined</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_Catalog" name="Catalog">
+        <bpmn:flowNodeRef>C_Search</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_Order" name="Order Management">
+        <bpmn:flowNodeRef>O_Verify</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>O_Create</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+    <bpmn:startEvent id="S_Start" name="Start:&#10;wants to shop">
+      <bpmn:outgoing>Flow_1</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:task id="S_Ask" name="Ask assistant to find a product&#10;(e.g. &#x27;fast chargers under $30&#x27;)">
+      <bpmn:incoming>Flow_1</bpmn:incoming>
+      <bpmn:outgoing>Flow_2</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="A_Intent" name="Understand shopper&#x27;s request">
+      <bpmn:documentation>Resolves intent and entities from the shopper's message.</bpmn:documentation>
+      <bpmn:incoming>Flow_2</bpmn:incoming>
+      <bpmn:outgoing>Flow_3</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="C_Search" name="Search products &amp;&#10;verify live stock">
+      <bpmn:incoming>Flow_3</bpmn:incoming>
+      <bpmn:outgoing>Flow_4</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="A_Present" name="Render product cards">
+      <bpmn:incoming>Flow_4</bpmn:incoming>
+      <bpmn:outgoing>Flow_5</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="S_Review" name="Review product results">
+      <bpmn:incoming>Flow_5</bpmn:incoming>
+      <bpmn:outgoing>Flow_6</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="S_Request" name="Ask to order selected item(s)">
+      <bpmn:incoming>Flow_6</bpmn:incoming>
+      <bpmn:outgoing>Flow_7</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="A_Stage" name="Stage order draft&#10;(price held 15 min)">
+      <bpmn:documentation>Creates a pricing snapshot with a 15-minute TTL (FR-14).</bpmn:documentation>
+      <bpmn:incoming>Flow_7</bpmn:incoming>
+      <bpmn:outgoing>Flow_8</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="O_Verify" name="Re-verify stock &amp; price">
+      <bpmn:documentation>Confirms the staged price/stock still hold before the shopper sees a final total (FR-14).</bpmn:documentation>
+      <bpmn:incoming>Flow_8</bpmn:incoming>
+      <bpmn:outgoing>Flow_9</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="A_Draft" name="Present draft card&#10;(items, total)">
+      <bpmn:incoming>Flow_9</bpmn:incoming>
+      <bpmn:outgoing>Flow_10</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:exclusiveGateway id="A_Gate" name="Customer confirms&#10;order?">
+      <bpmn:documentation>Mandatory Human-in-the-Loop Confirmation Gate (FR-3); no order is placed automatically.</bpmn:documentation>
+      <bpmn:incoming>Flow_10</bpmn:incoming>
+      <bpmn:outgoing>Flow_11</bpmn:outgoing>
+      <bpmn:outgoing>Flow_16</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:task id="S_Confirm" name="Click &#x27;Submit Order&#x27;">
+      <bpmn:incoming>Flow_11</bpmn:incoming>
+      <bpmn:outgoing>Flow_12</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="A_Execute" name="Execute order">
+      <bpmn:documentation>Sends an Idempotency-Key so a duplicate click or retry does not create a second order (FR-4).</bpmn:documentation>
+      <bpmn:incoming>Flow_12</bpmn:incoming>
+      <bpmn:outgoing>Flow_13</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="O_Create" name="Create order &amp;&#10;deduct stock">
+      <bpmn:documentation>Order is created in PLACED status; stock is deducted atomically in the same transaction.</bpmn:documentation>
+      <bpmn:incoming>Flow_13</bpmn:incoming>
+      <bpmn:outgoing>Flow_14</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="A_ConfirmCard" name="Render confirmed order card">
+      <bpmn:incoming>Flow_14</bpmn:incoming>
+      <bpmn:outgoing>Flow_15</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:endEvent id="S_End" name="End:&#10;order placed">
+      <bpmn:incoming>Flow_15</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:endEvent id="A_EndDeclined" name="End:&#10;draft cancelled or expired">
+      <bpmn:documentation>Covers both an explicit decline and the draft's 15-minute TTL expiring before confirmation.</bpmn:documentation>
+      <bpmn:incoming>Flow_16</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_1" sourceRef="S_Start" targetRef="S_Ask" />
+    <bpmn:sequenceFlow id="Flow_2" sourceRef="S_Ask" targetRef="A_Intent" />
+    <bpmn:sequenceFlow id="Flow_3" sourceRef="A_Intent" targetRef="C_Search" />
+    <bpmn:sequenceFlow id="Flow_4" sourceRef="C_Search" targetRef="A_Present" />
+    <bpmn:sequenceFlow id="Flow_5" sourceRef="A_Present" targetRef="S_Review" />
+    <bpmn:sequenceFlow id="Flow_6" sourceRef="S_Review" targetRef="S_Request" />
+    <bpmn:sequenceFlow id="Flow_7" sourceRef="S_Request" targetRef="A_Stage" />
+    <bpmn:sequenceFlow id="Flow_8" sourceRef="A_Stage" targetRef="O_Verify" />
+    <bpmn:sequenceFlow id="Flow_9" sourceRef="O_Verify" targetRef="A_Draft" />
+    <bpmn:sequenceFlow id="Flow_10" sourceRef="A_Draft" targetRef="A_Gate" />
+    <bpmn:sequenceFlow id="Flow_11" sourceRef="A_Gate" targetRef="S_Confirm" name="Yes" />
+    <bpmn:sequenceFlow id="Flow_12" sourceRef="S_Confirm" targetRef="A_Execute" />
+    <bpmn:sequenceFlow id="Flow_13" sourceRef="A_Execute" targetRef="O_Create" />
+    <bpmn:sequenceFlow id="Flow_14" sourceRef="O_Create" targetRef="A_ConfirmCard" />
+    <bpmn:sequenceFlow id="Flow_15" sourceRef="A_ConfirmCard" targetRef="S_End" />
+    <bpmn:sequenceFlow id="Flow_16" sourceRef="A_Gate" targetRef="A_EndDeclined" name="No" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="Process_ShopperOrderPlacement_diagram">
+    <bpmndi:BPMNPlane id="Process_ShopperOrderPlacement_plane" bpmnElement="Process_ShopperOrderPlacement">
+      <bpmndi:BPMNShape id="Process_ShopperOrderPlacement_pool_di" bpmnElement="Process_ShopperOrderPlacement" isHorizontal="true">
+        <dc:Bounds x="160" y="80" width="3370" height="600" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_Shopper_di" bpmnElement="Lane_Shopper" isHorizontal="true">
+        <dc:Bounds x="160" y="80" width="3370" height="170" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_Assistant_di" bpmnElement="Lane_Assistant" isHorizontal="true">
+        <dc:Bounds x="160" y="250" width="3370" height="170" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_Catalog_di" bpmnElement="Lane_Catalog" isHorizontal="true">
+        <dc:Bounds x="160" y="420" width="3370" height="130" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_Order_di" bpmnElement="Lane_Order" isHorizontal="true">
+        <dc:Bounds x="160" y="550" width="3370" height="130" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="S_Start_di" bpmnElement="S_Start">
+        <dc:Bounds x="242" y="147" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="S_Ask_di" bpmnElement="S_Ask">
+        <dc:Bounds x="390" y="125" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="A_Intent_di" bpmnElement="A_Intent">
+        <dc:Bounds x="580" y="295" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="C_Search_di" bpmnElement="C_Search">
+        <dc:Bounds x="770" y="445" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="A_Present_di" bpmnElement="A_Present">
+        <dc:Bounds x="960" y="295" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="S_Review_di" bpmnElement="S_Review">
+        <dc:Bounds x="1150" y="125" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="S_Request_di" bpmnElement="S_Request">
+        <dc:Bounds x="1340" y="125" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="A_Stage_di" bpmnElement="A_Stage">
+        <dc:Bounds x="1530" y="295" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="O_Verify_di" bpmnElement="O_Verify">
+        <dc:Bounds x="1720" y="575" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="A_Draft_di" bpmnElement="A_Draft">
+        <dc:Bounds x="1910" y="295" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="A_Gate_di" bpmnElement="A_Gate">
+        <dc:Bounds x="2135" y="310" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2100" y="260" width="120" height="40" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="S_Confirm_di" bpmnElement="S_Confirm">
+        <dc:Bounds x="2290" y="125" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="A_Execute_di" bpmnElement="A_Execute">
+        <dc:Bounds x="2480" y="295" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="O_Create_di" bpmnElement="O_Create">
+        <dc:Bounds x="2670" y="575" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="A_ConfirmCard_di" bpmnElement="A_ConfirmCard">
+        <dc:Bounds x="2860" y="295" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="S_End_di" bpmnElement="S_End">
+        <dc:Bounds x="3092" y="147" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="A_EndDeclined_di" bpmnElement="A_EndDeclined">
+        <dc:Bounds x="3092" y="381" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_1_di" bpmnElement="Flow_1">
+        <di:waypoint x="278" y="165" />
+        <di:waypoint x="334" y="165" />
+        <di:waypoint x="334" y="165" />
+        <di:waypoint x="390" y="165" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_2_di" bpmnElement="Flow_2">
+        <di:waypoint x="510" y="165" />
+        <di:waypoint x="545" y="165" />
+        <di:waypoint x="545" y="335" />
+        <di:waypoint x="580" y="335" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_3_di" bpmnElement="Flow_3">
+        <di:waypoint x="700" y="335" />
+        <di:waypoint x="735" y="335" />
+        <di:waypoint x="735" y="485" />
+        <di:waypoint x="770" y="485" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_4_di" bpmnElement="Flow_4">
+        <di:waypoint x="890" y="485" />
+        <di:waypoint x="925" y="485" />
+        <di:waypoint x="925" y="335" />
+        <di:waypoint x="960" y="335" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_5_di" bpmnElement="Flow_5">
+        <di:waypoint x="1080" y="335" />
+        <di:waypoint x="1115" y="335" />
+        <di:waypoint x="1115" y="165" />
+        <di:waypoint x="1150" y="165" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_6_di" bpmnElement="Flow_6">
+        <di:waypoint x="1270" y="165" />
+        <di:waypoint x="1340" y="165" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_7_di" bpmnElement="Flow_7">
+        <di:waypoint x="1460" y="165" />
+        <di:waypoint x="1495" y="165" />
+        <di:waypoint x="1495" y="335" />
+        <di:waypoint x="1530" y="335" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_8_di" bpmnElement="Flow_8">
+        <di:waypoint x="1650" y="335" />
+        <di:waypoint x="1685" y="335" />
+        <di:waypoint x="1685" y="615" />
+        <di:waypoint x="1720" y="615" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_9_di" bpmnElement="Flow_9">
+        <di:waypoint x="1840" y="615" />
+        <di:waypoint x="1875" y="615" />
+        <di:waypoint x="1875" y="335" />
+        <di:waypoint x="1910" y="335" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_10_di" bpmnElement="Flow_10">
+        <di:waypoint x="2030" y="335" />
+        <di:waypoint x="2082" y="335" />
+        <di:waypoint x="2082" y="335" />
+        <di:waypoint x="2135" y="335" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_11_di" bpmnElement="Flow_11">
+        <di:waypoint x="2185" y="335" />
+        <di:waypoint x="2238" y="335" />
+        <di:waypoint x="2238" y="165" />
+        <di:waypoint x="2290" y="165" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_12_di" bpmnElement="Flow_12">
+        <di:waypoint x="2410" y="165" />
+        <di:waypoint x="2445" y="165" />
+        <di:waypoint x="2445" y="335" />
+        <di:waypoint x="2480" y="335" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_13_di" bpmnElement="Flow_13">
+        <di:waypoint x="2600" y="335" />
+        <di:waypoint x="2635" y="335" />
+        <di:waypoint x="2635" y="615" />
+        <di:waypoint x="2670" y="615" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_14_di" bpmnElement="Flow_14">
+        <di:waypoint x="2790" y="615" />
+        <di:waypoint x="2825" y="615" />
+        <di:waypoint x="2825" y="335" />
+        <di:waypoint x="2860" y="335" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_15_di" bpmnElement="Flow_15">
+        <di:waypoint x="2980" y="335" />
+        <di:waypoint x="3036" y="335" />
+        <di:waypoint x="3036" y="165" />
+        <di:waypoint x="3092" y="165" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_16_di" bpmnElement="Flow_16">
+        <di:waypoint x="2160" y="360" />
+        <di:waypoint x="2160" y="400" />
+        <di:waypoint x="3110" y="400" />
+        <di:waypoint x="3110" y="381" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

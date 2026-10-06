@@ -1,0 +1,22 @@
+# OPT-IN dev override. The base stack publishes NO telemetry backend port to the host: Prometheus,
+# Loki, Tempo, the Collector and Grafana are reachable on polaris-net only, and Grafana only through
+# the gateway (https://grafana.polaris.local). This file publishes them on the host LOOPBACK (127.0.0.1) for local tooling that
+# runs outside Docker:
+#   4317/4318  OTLP receiver, for apps started with `make run` (their default exporter is http://localhost:4318) and ad-hoc k6
+#   9090       Prometheus UI/API      3100 Loki      3200 Tempo
+# Use:  make up-dev-ports   (or add -f docker-compose.dev-ports.yml to your compose command)
+# Never use it on a shared or production host.
+services:
+  otel-collector:
+    ports:
+      - "127.0.0.1:4317:4317"
+      - "127.0.0.1:4318:4318"
+  prometheus:
+    ports:
+      - "127.0.0.1:9090:9090"
+  loki:
+    ports:
+      - "127.0.0.1:3100:3100"
+  tempo:
+    ports:
+      - "127.0.0.1:3200:3200"

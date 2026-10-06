@@ -1,0 +1,86 @@
+apiVersion: 1
+
+# Full jsonData so an operator can pivot metric -> trace -> logs.
+# UIDs are fixed so the datasources reference each other.
+
+datasources:
+
+  - name: Prometheus
+    uid: prometheus
+    # Provisioned and read-only; nobody edits or deletes it in the UI or API (changes go through this file).
+    editable: false
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    jsonData:
+      httpMethod: POST
+      timeInterval: 15s
+      exemplarTraceIdDestinations:
+        # traceID: exemplars written by Tempo span-metrics; trace_id: OTLP app exemplars
+        - name: traceID
+          datasourceUid: tempo
+        - name: trace_id
+          datasourceUid: tempo
+
+  - name: Loki
+    uid: loki
+    # Provisioned and read-only; nobody edits or deletes it in the UI or API (changes go through this file).
+    editable: false
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    jsonData:
+      derivedFields:
+        # OTLP logs land in Loki with trace_id as structured metadata.
+        - name: trace_id
+          matcherType: label
+          matcherRegex: trace_id
+          url: '$${__value.raw}'
+          datasourceUid: tempo
+          urlDisplayLabel: View trace
+
+  - name: Tempo
+    uid: tempo
+    # Provisioned and read-only; nobody edits or deletes it in the UI or API (changes go through this file).
+    editable: false
+    type: tempo
+    access: proxy
+    url: http://tempo:3200
+    jsonData:
+      httpMethod: GET
+      tracesToLogsV2:
+        datasourceUid: loki
+        spanStartTimeShift: -5m
+        spanEndTimeShift: 5m
+        # trace_id is Loki structured metadata (not in the log line), so the default
+        # line filter would match nothing; query it explicitly.
+        filterByTraceID: false
+        filterBySpanID: false
+        customQuery: true
+        query: '{$${__tags}} | trace_id="$${__span.traceId}"'
+        tags:
+          - key: service.name
+            value: service_name
+      tracesToMetrics:
+        datasourceUid: prometheus
+        spanStartTimeShift: -5m
+        spanEndTimeShift: 5m
+        queries:
+          - name: Request rate
+            query: 'sum(rate(traces_spanmetrics_calls_total{$$__tags}[5m]))'
+          - name: Error rate
+            query: 'sum(rate(traces_spanmetrics_calls_total{$$__tags,status_code="STATUS_CODE_ERROR"}[5m]))'
+          - name: Latency p95
+            query: 'histogram_quantile(0.95, sum(rate(traces_spanmetrics_latency_bucket{$$__tags}[5m])) by (le))'
+        tags:
+          - key: service.name
+            value: service
+      serviceMap:
+        datasourceUid: prometheus
+      nodeGraph:
+        enabled: true
+      search:
+        hide: false
+      lokiSearch:
+        datasourceUid: loki

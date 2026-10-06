@@ -1,0 +1,88 @@
+{
+  "realm": "master",
+  "enabled": true,
+  "clients": [
+    {
+      "clientId": "grafana",
+      "name": "Grafana Observability",
+      "description": "Staff SSO for Grafana. Lives in master, apart from the polaris customer realm; roles are this client's roles.",
+      "enabled": true,
+      "publicClient": true,
+      "redirectUris": [
+        "https://grafana.polaris.local/login/generic_oauth"
+      ],
+      "webOrigins": [
+        "https://grafana.polaris.local"
+      ],
+      "directAccessGrantsEnabled": false,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": false,
+      "protocol": "openid-connect",
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "https://grafana.polaris.local/*"
+      },
+      "defaultClientScopes": [
+        "basic",
+        "profile",
+        "email",
+        "roles",
+        "web-origins"
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "grafana-admin",
+      "enabled": true,
+      "email": "grafana-admin@polaris.local",
+      "emailVerified": true,
+      "firstName": "Grafana",
+      "lastName": "Admin",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${DEFAULT_PASSWORD}",
+          "temporary": false
+        }
+      ],
+      "clientRoles": {
+        "grafana": [
+          "admin"
+        ]
+      }
+    }
+  ],
+  "roles": {
+    "client": {
+      "grafana": [
+        {
+          "name": "admin",
+          "description": "Grafana Admin"
+        },
+        {
+          "name": "editor",
+          "description": "Grafana Editor"
+        },
+        {
+          "name": "viewer",
+          "description": "Grafana Viewer"
+        }
+      ]
+    }
+  },
+  "components": {
+    "org.keycloak.userprofile.UserProfileProvider": [
+      {
+        "providerId": "declarative-user-profile",
+        "subComponents": {},
+        "config": {
+          "kc.user.profile.config": [
+            "{\"attributes\":[{\"name\":\"username\",\"displayName\":\"${username}\",\"validations\":{\"length\":{\"min\":3,\"max\":255},\"username-prohibited-characters\":{},\"up-username-not-idn-homograph\":{}},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]},\"multivalued\":false},{\"name\":\"email\",\"displayName\":\"${email}\",\"validations\":{\"email\":{},\"length\":{\"max\":255}},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]},\"multivalued\":false},{\"name\":\"firstName\",\"displayName\":\"${firstName}\",\"validations\":{\"length\":{\"max\":255},\"person-name-prohibited-characters\":{}},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]},\"multivalued\":false},{\"name\":\"lastName\",\"displayName\":\"${lastName}\",\"validations\":{\"length\":{\"max\":255},\"person-name-prohibited-characters\":{}},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]},\"multivalued\":false}],\"groups\":[{\"name\":\"user-metadata\",\"displayHeader\":\"User metadata\",\"displayDescription\":\"Attributes, which refer to user metadata\"}]}"
+          ]
+        }
+      }
+    ]
+  }
+}
