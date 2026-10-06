@@ -25,7 +25,9 @@ sha256() {
 verify() {
   local actual
   actual="$(sha256 "$1")"
-  [ -n "$2" ] && [ "$actual" = "$2" ] || die "checksum mismatch for $(basename "$1"): expected '$2', got $actual"
+  if [ -z "$2" ] || [ "$actual" != "$2" ]; then
+    die "checksum mismatch for $(basename "$1"): expected '$2', got $actual"
+  fi
 }
 
 installed() { [ -x "$TOOLS_BIN/$1" ] && [ "$(cat "$TOOLS_BIN/.$1.version" 2>/dev/null)" = "$2" ]; }
