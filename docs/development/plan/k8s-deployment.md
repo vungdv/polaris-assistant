@@ -42,7 +42,7 @@ Compose stays the inner-loop dev environment. Kubernetes doesn't replace it in t
 | D5 | Gateway | **Gateway API** with **NGINX Gateway Fabric** | Gateway API is the standard successor to Ingress (ingress-nginx is retired); keeps nginx semantics and native OTel tracing | Envoy Gateway |
 | D6 | TLS | **cert-manager** with a self-signed local root CA (`ClusterIssuer`), distributed to pods by **trust-manager** as a JKS bundle | Replaces the mkcert certificates and the hand-copied `truststore.jks` | Keep mkcert certs as static Secrets |
 | D7 | In-cluster resolution of `id.polaris.local` | **CoreDNS rewrite** of `*.polaris.local` to the Gateway Service | Keeps one issuer (TR-K8) with no app change, same as the nginx alias on `polaris-net` | `hostAliases` per pod |
-| D8 | Observability backend | **OTel Collector → Grafana Cloud** (already configured in `.env`). The local Prometheus, Loki, Tempo and Grafana move to K9 | Smallest working slice. The in-cluster LGTM stack is large and optional locally | Deploy LGTM charts from the start |
+| D8 | Observability backend | **OTel Collector → Grafana Cloud** (already configured in `.env`). The local Prometheus, Loki, Tempo and Grafana move to K12 | Smallest working slice. The in-cluster LGTM stack is large and optional locally | Deploy LGTM charts from the start |
 | D9 | Image registry | **GHCR**, pushed by CI. Local runs use `kind load docker-image` | No registry needed on the laptop | Local registry container |
 | D10 | Kafka topics | **Stay provisioned by the owning service** at startup, as today. Strimzi's Topic Operator is disabled | No behaviour change; the topic contract stays with its owner | `KafkaTopic` CRs |
 
@@ -68,7 +68,7 @@ flowchart LR
   polaris & assistant & emu -.->|JWKS via id.polaris.local| gw
 ```
 
-The edges above are also the NetworkPolicy allow list (K10).
+The edges above are also the NetworkPolicy allow list (K11).
 
 ## Repository layout
 
@@ -209,3 +209,4 @@ Slices run top to bottom; only the `execute-plan` coordinator edits this table.
 
 | Date | Change | Reason | Slices affected |
 |:--|:--|:--|:--|
+| 2026-10-06 | Fixed slice references: D8 now points to K12 for the local LGTM stack, §Topology to K11 for NetworkPolicies | Stale numbering from an earlier draft | K11, K12 |
