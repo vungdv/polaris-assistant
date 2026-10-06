@@ -1,4 +1,4 @@
-.PHONY: seed-shoppers chat-scenarios pull build up up-dev-ports down validate-docs setup-hooks render-bpmn test test-rules test-perf test-concurrency e2e-fulfilment e2e-fulfilment gcx gcx-exec status playwright-ui playwright-close run run-assistant run-fulfilment verify-fulfilment-image clean polaris-sql kafka-topics kafka-tail kafka-cluster kafka-offsets kafka-groups kafka-leaders
+.PHONY: seed-shoppers chat-scenarios pull build up up-dev-ports down validate-docs setup-hooks render-bpmn test test-rules test-perf test-concurrency e2e-fulfilment e2e-fulfilment gcx gcx-exec status playwright-ui playwright-close run run-assistant run-fulfilment verify-fulfilment-image clean polaris-sql kafka-topics kafka-tail kafka-cluster kafka-offsets kafka-groups kafka-leaders k8s-tools k8s-validate k8s-up k8s-down k8s-smoke
 
 run:
 	mvn spring-boot:run -pl apps/polaris
@@ -94,4 +94,16 @@ playwright-ui:
 	playwright-cli open https://polaris.local/swagger-ui/index.html
 playwright-close:
 	playwright-cli close-all
+
+# Kubernetes: local kind cluster from deploy/k8s (ADR-0021). Tool versions are pinned in deploy/k8s/versions.env.
+k8s-tools:
+	./scripts/k8s/tools.sh
+k8s-validate:
+	./scripts/k8s/validate.sh
+k8s-up:
+	./scripts/k8s/up.sh
+k8s-down:
+	./scripts/k8s/down.sh
+k8s-smoke:
+	./scripts/k8s/smoke.sh
 

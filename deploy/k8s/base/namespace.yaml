@@ -1,0 +1,15 @@
+# The application namespace. Pod Security Admission enforces the `restricted` profile (TR-K10);
+# warn and audit use the same level so violations surface at apply time and in the audit log.
+# The version is `latest` of the cluster, which is itself pinned by the kind node image (deploy/k8s/versions.env).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: polaris
+  labels:
+    app.kubernetes.io/part-of: polaris
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/warn-version: latest
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/audit-version: latest
