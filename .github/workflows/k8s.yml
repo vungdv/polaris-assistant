@@ -1,0 +1,59 @@
+# Kubernetes deployment (deploy/k8s, ADR-0021): validate the rendered manifests, then bring the stack up on a
+# kind cluster and run the smoke test. Tool versions come from deploy/k8s/versions.env via scripts/k8s/tools.sh.
+
+name: Kubernetes
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate manifests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+    - uses: actions/checkout@v7
+    - name: Lint scripts
+      run: shellcheck -x scripts/k8s/*.sh
+    - name: Render with kubectl kustomize and validate with kubeconform
+      run: make k8s-validate
+
+  kind:
+    name: Deploy to kind and smoke test
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+    - uses: actions/checkout@v7
+    - name: Create cluster and apply overlays/local
+      run: make k8s-up
+    - name: Re-run k8s-up (idempotent)
+      run: make k8s-up
+    - name: Smoke test
+      run: make k8s-smoke
+    - name: Dump cluster state
+      if: failure()
+      run: |
+        .tools/bin/kubectl --context kind-polaris get all,events -A || true
+        .tools/bin/kind export logs --name polaris "${RUNNER_TEMP}/kind-logs" || true
+    - name: Upload kind logs
+      if: failure()
+      uses: actions/upload-artifact@v7
+      with:
+        name: kind-logs
+        path: ${{ runner.temp }}/kind-logs
+        if-no-files-found: ignore
+        retention-days: 7
+    - name: Delete cluster
+      if: always()
+      run: make k8s-down
