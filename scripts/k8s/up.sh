@@ -10,9 +10,11 @@ command -v docker >/dev/null || die "docker is required by kind"
 
 if cluster_exists; then
   log "kind cluster '$KIND_CLUSTER_NAME' already exists, reusing it"
+  ensure_kubeconfig
 else
   log "creating kind cluster '$KIND_CLUSTER_NAME' ($KIND_NODE_IMAGE) from $KIND_CONFIG"
-  kind create cluster --name "$KIND_CLUSTER_NAME" --image "$KIND_NODE_IMAGE" --config "$KIND_CONFIG" --wait 120s ||
+  kind create cluster --name "$KIND_CLUSTER_NAME" --image "$KIND_NODE_IMAGE" --config "$KIND_CONFIG" \
+    --kubeconfig "$K8S_KUBECONFIG" --wait 120s ||
     die "cluster creation failed. If host ports 80/443 are taken (Compose's nginx), run 'make down' first or set KIND_CONFIG"
 fi
 

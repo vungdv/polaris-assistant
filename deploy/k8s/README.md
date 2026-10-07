@@ -21,6 +21,16 @@ Manifests and tooling for running Polaris on Kubernetes ([ADR-0021](../../docs/t
 
 Compose's nginx also binds ports 80/443: run `make down` first, or point `KIND_CONFIG` at a copy of `kind/cluster.yaml` with other host ports.
 
+The scripts keep the cluster's credentials in the untracked `.tools/kubeconfig` (override with `K8S_KUBECONFIG`), not
+in `~/.kube/config`: `make k8s-up` and `make k8s-down` never change your kubeconfig or its current context.
+`make k8s-up` and `make k8s-smoke` rewrite the file if it's missing while the cluster exists. To use your own kubectl,
+helm or k9s against the cluster:
+
+```bash
+export KUBECONFIG="$PWD/.tools/kubeconfig"   # from the repo root; or pass --kubeconfig .tools/kubeconfig per command
+kubectl --context kind-polaris get pods -A
+```
+
 ## Application images
 
 CI (`.github/workflows/images.yml`) builds `polaris`, `polaris-assistant` and `polaris-fulfilment-emulator` from their
@@ -65,7 +75,7 @@ From the host, add the hosts to `/etc/hosts` and trust the cluster root CA with
 `scripts/setup-local-https-mac-m1.sh --k8s` (macOS; skips when no cluster runs). Without it:
 
 ```bash
-kubectl --context kind-polaris -n cert-manager get secret polaris-root-ca -o jsonpath='{.data.tls\.crt}' | base64 -d > /tmp/polaris-root-ca.pem
+kubectl --kubeconfig .tools/kubeconfig --context kind-polaris -n cert-manager get secret polaris-root-ca -o jsonpath='{.data.tls\.crt}' | base64 -d > /tmp/polaris-root-ca.pem
 curl --cacert /tmp/polaris-root-ca.pem https://polaris.local/   # 404 until app routes exist
 ```
 

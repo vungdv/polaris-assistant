@@ -7,7 +7,7 @@ source "$(dirname "$0")/lib.sh"
 ensure_tools kind
 
 if cluster_exists; then
-  kind delete cluster --name "$KIND_CLUSTER_NAME"
+  kind delete cluster --name "$KIND_CLUSTER_NAME" --kubeconfig "$K8S_KUBECONFIG"
 else
   log "kind cluster '$KIND_CLUSTER_NAME' does not exist, nothing to delete"
 fi

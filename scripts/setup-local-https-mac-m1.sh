@@ -99,18 +99,19 @@ K8S_CA_NAME="Polaris Local Root CA"
 SYSTEM_KEYCHAIN="/Library/Keychains/System.keychain"
 
 trust_k8s_root_ca() {
-  local repo_root kubectl_bin context ca_file fingerprint stale
+  local repo_root kubectl_bin kubeconfig context ca_file fingerprint stale
   repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
   kubectl_bin="${repo_root}/.tools/bin/kubectl"
   [[ -x "$kubectl_bin" ]] || kubectl_bin="$(command -v kubectl || true)"
   context="kind-${KIND_CLUSTER_NAME:-polaris}"
+  kubeconfig="${K8S_KUBECONFIG:-${repo_root}/.tools/kubeconfig}"  # written by scripts/k8s (lib.sh)
 
   if [[ -z "$kubectl_bin" ]]; then
     warn "kubectl not found (run 'make k8s-up' first). Skipping the cluster root CA."
     return
   fi
   ca_file="$(mktemp)"
-  if ! "$kubectl_bin" --context "$context" --request-timeout=10s -n cert-manager \
+  if ! "$kubectl_bin" --kubeconfig "$kubeconfig" --context "$context" --request-timeout=10s -n cert-manager \
       get secret polaris-root-ca -o jsonpath='{.data.tls\.crt}' 2>/dev/null | base64 -d >"$ca_file" ||
       ! openssl x509 -in "$ca_file" -noout 2>/dev/null; then
     warn "No running kind cluster with a root CA (context ${context}). Run 'make k8s-up', then re-run with --k8s."

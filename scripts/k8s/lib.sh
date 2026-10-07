@@ -1,6 +1,7 @@
 # shellcheck shell=bash
 # Shared settings for scripts/k8s/*.sh. Source it; don't run it.
-# Every kubectl call targets the kind context explicitly, so other clusters in the kubeconfig are never touched.
+# Every kubectl call targets the kind context explicitly, in a repo-local kubeconfig (K8S_KUBECONFIG), so the user's
+# ~/.kube/config and its current context are never read or rewritten.
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 K8S_DIR="$REPO_ROOT/deploy/k8s"
@@ -12,6 +13,9 @@ KIND_CONFIG="${KIND_CONFIG:-$K8S_DIR/kind/cluster.yaml}"
 K8S_OVERLAY="${K8S_OVERLAY:-$K8S_DIR/overlays/local}"
 K8S_NAMESPACE="${K8S_NAMESPACE:-polaris}"
 KUBE_CONTEXT="kind-$KIND_CLUSTER_NAME"
+# kind writes the cluster's credentials here (--kubeconfig), and kubectl and helm read them from here (KUBECONFIG).
+K8S_KUBECONFIG="${K8S_KUBECONFIG:-$REPO_ROOT/.tools/kubeconfig}"
+export KUBECONFIG="$K8S_KUBECONFIG"
 
 # Edge (K3): third-party components from deploy/k8s/platform, and the Gateway in base/edge. NGINX Gateway Fabric
 # names the data-plane Service <gateway>-<gatewayclass>; platform/coredns rewrites *.polaris.local to it.
@@ -68,6 +72,14 @@ sha256() {
 }
 
 cluster_exists() { kind get clusters 2>/dev/null | grep -qx "$KIND_CLUSTER_NAME"; }
+
+# Regenerates the kubeconfig entry of an existing cluster when it's missing (the file was deleted, or the cluster was
+# created before K8S_KUBECONFIG existed).
+ensure_kubeconfig() {
+  kubectl config get-contexts "$KUBE_CONTEXT" >/dev/null 2>&1 && return
+  log "writing the kubeconfig of cluster '$KIND_CLUSTER_NAME' to $K8S_KUBECONFIG"
+  kind export kubeconfig --name "$KIND_CLUSTER_NAME" --kubeconfig "$K8S_KUBECONFIG"
+}
 
 # Application images (TR-K2): $IMAGE_REGISTRY/<app>:<git-sha>, never `latest`. CI pushes them to GHCR on main
 # (.github/workflows/images.yml); `make k8s-images` builds them locally and loads them into kind. A fork sets
