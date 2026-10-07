@@ -10,6 +10,7 @@ import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.function.BooleanSupplier;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -33,6 +34,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.SpanContext;
@@ -97,7 +99,10 @@ class OutboxRelayWorkerIntegrationTest {
         assertThat(handedOff.traceContext().traceparent()).isEqualTo(TRACEPARENT);
 
         assertThat(awaitStatus(recorded, "DELIVERED", Duration.ofSeconds(2))).isTrue();
-        assertThat(meters.get(OutboxMetrics.DELIVERY_LAG).timer().count()).isGreaterThanOrEqualTo(1);
+        // The relay records the delivery lag only after its transaction commits (OutboxRelay#relayOnce), so the
+        // DELIVERED row can be visible here a moment before the relay thread has recorded the timer.
+        assertThat(await(Duration.ofSeconds(2), () -> deliveryLagCount() >= 1))
+                .as("delivery lag recorded after commit").isTrue();
         assertThat(meters.get(OutboxMetrics.BACKLOG).gauge().value()).isZero();
         assertThat(meters.find(OutboxMetrics.OLDEST_PENDING_AGE).gauge()).isNotNull();
     }
@@ -128,16 +133,24 @@ class OutboxRelayWorkerIntegrationTest {
     }
 
     private boolean awaitStatus(UUID eventId, String status, Duration timeout) throws InterruptedException {
+        return await(timeout, () -> status.equals(jdbc.sql("SELECT status FROM outbox_events WHERE event_id = :id")
+                .param("id", eventId).query(String.class).single()));
+    }
+
+    private long deliveryLagCount() {
+        Timer lag = meters.find(OutboxMetrics.DELIVERY_LAG).timer();
+        return lag == null ? 0 : lag.count();
+    }
+
+    private static boolean await(Duration timeout, BooleanSupplier condition) throws InterruptedException {
         long deadline = System.nanoTime() + timeout.toNanos();
         while (System.nanoTime() < deadline) {
-            String current = jdbc.sql("SELECT status FROM outbox_events WHERE event_id = :id")
-                    .param("id", eventId).query(String.class).single();
-            if (status.equals(current)) {
+            if (condition.getAsBoolean()) {
                 return true;
             }
             Thread.sleep(20);
         }
-        return false;
+        return condition.getAsBoolean();
     }
 
     /** Test transport, the only stub. */
