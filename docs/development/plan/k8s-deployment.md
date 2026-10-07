@@ -21,7 +21,7 @@ Compose stays the inner-loop dev environment. Kubernetes doesn't replace it in t
 |:--|:--|
 | TR-K1 | **Declarative and standard:** plain Kubernetes manifests composed with Kustomize (`base` + `overlays/local`). Third-party platform components are installed from their upstream Helm charts or operators at pinned versions, never forked or copied into the repo |
 | TR-K2 | **Reproducible:** one command creates the cluster and deploys everything from a clean machine. Every image and chart version is pinned. Application images are tagged with the git SHA, never `latest` |
-| TR-K3 | **Config as data (12-factor):** non-secret config in ConfigMaps, credentials in Secrets generated from an untracked env file (the same keys as `.env.template`). No credential is committed |
+| TR-K3 | **Config as data (12-factor):** non-secret config in ConfigMaps, credentials in Secrets generated from an untracked env file (the same keys as `.env.template`). Exception: database credentials are operator-generated CNPG Secrets (`<cluster>-app`), not env-file keys. No credential is committed |
 | TR-K4 | **Health-driven lifecycle:** each app has `startupProbe`, `livenessProbe` and `readinessProbe` on the existing `/actuator/health/{liveness,readiness}` groups, graceful shutdown (`server.shutdown=graceful`, a `preStop` drain and a matching `terminationGracePeriodSeconds`), and resource requests and limits |
 | TR-K5 | **Multi-replica safe:** `polaris` and `polaris-assistant` run 2 replicas with a PodDisruptionBudget. Flyway migrations, the outbox relay and Kafka consumer groups stay correct when replicas start, stop or roll concurrently |
 | TR-K6 | **Stateful parity:** PostgreSQL, Kafka (3-node KRaft, RF 3, min ISR 2, no topic auto-creation) and Keycloak keep their Compose semantics. Data survives pod restarts. Losing one Kafka node loses no `acks=all` write |
@@ -36,7 +36,7 @@ Compose stays the inner-loop dev environment. Kubernetes doesn't replace it in t
 | # | Decision | Default chosen | Why | Alternative |
 |:--|:--|:--|:--|:--|
 | D1 | Packaging for our apps | **Kustomize** | Ships with `kubectl`, no templating language, overlays map cleanly to environments | Helm umbrella chart |
-| D2 | PostgreSQL | **CloudNativePG** operator, one `Cluster` per owner (`polaris-db`, `keycloak-db`) | Declarative backups, failover, standard Postgres images | Bitnami chart, plain StatefulSet |
+| D2 | PostgreSQL | **CloudNativePG** operator, one `Cluster` per owner (`polaris-db`, `keycloak-db`) | Declarative backups (configured in K11), failover, standard Postgres images | Bitnami chart, plain StatefulSet |
 | D3 | Kafka | **Strimzi** operator, KRaft `KafkaNodePool` of 3 dual-role nodes | Same topology as Compose (TR-B1); operator-managed rolling restarts | Bitnami chart |
 | D4 | Keycloak | **Keycloak Operator** with `KeycloakRealmImport` (placeholders from a Secret for `DEFAULT_PASSWORD` and the emulator secret) | Production mode instead of `start-dev`; upstream-supported realm import | Plain Deployment with `--import-realm` |
 | D5 | Gateway | **Gateway API** with **NGINX Gateway Fabric** | Gateway API is the standard successor to Ingress (ingress-nginx is retired); keeps nginx semantics and native OTel tracing | Envoy Gateway |
@@ -105,7 +105,7 @@ Slices run top to bottom; only the `execute-plan` coordinator edits this table.
 | 8 | K8 | Order & Catalog (`polaris`) and Swagger UI | `todo` | — | | | |
 | 9 | K9 | Assistant (`polaris-assistant`) | `todo` | Gemini and TypeSafe API keys available to CI as secrets | | | |
 | 10 | K10 | Fulfilment (`polaris-fulfilment-emulator`) | `todo` | — | | | |
-| 11 | K11 | Hardening: NetworkPolicies, autoscaling, disruption | `todo` | — | | | |
+| 11 | K11 | Hardening: NetworkPolicies, autoscaling, disruption, backups | `todo` | — | | | |
 | 12 | K12 | Local LGTM stack and runbook | `todo` | — | | | |
 
 **Statuses:** `todo` → `in-progress` → `in-review` → `approved` (not merged) → `done` (merged), plus `blocked` (reason in *Notes*) and `dropped`.
@@ -184,11 +184,12 @@ Slices run top to bottom; only the `execute-plan` coordinator edits this table.
 - Deployment (1 replica, as today: one consumer group per partner) with no `HTTPRoute`, so actuator is in-cluster only. Kafka bootstrap points at the Strimzi bootstrap Service. The token endpoint goes through `id.polaris.local`, and the client secret comes from the shared Secret used by the realm import.
 - Smoke: `tests/e2e/run-fulfilment.sh` runs against the cluster: an order placed through the Gateway reaches `DISPATCHED` → shipped, and one trace continues across Kafka.
 
-### K11: Hardening: NetworkPolicies, autoscaling, disruption
-**Covers:** TR-K5, TR-K10.
+### K11: Hardening: NetworkPolicies, autoscaling, disruption, backups
+**Covers:** TR-K5, TR-K10, D2 (backups).
 - A default-deny NetworkPolicy for the namespace, plus allow rules for exactly the edges in §Topology (including `otel-agent` → Collector, the NGF data plane → Collector, and Collector → kube-apiserver), DNS, and egress to Gemini, TypeSafe and Grafana Cloud.
 - HPA on CPU for `polaris` and `polaris-assistant` (min 2, max 4 locally). metrics-server installed in kind.
 - Every pod passes Pod Security `restricted`, which the namespace has enforced since K1 (TR-K10).
+- CNPG backups for `polaris-db` and `keycloak-db`: a `ScheduledBackup` plus continuous WAL archiving to an in-cluster S3-compatible object store (pinned upstream chart, credentials from a Secret). Smoke: a backup completes, and a new `Cluster` bootstrapped from it (recovery) contains the smoke row.
 - Smoke: a pod outside the allow list can't reach `polaris-db` or Kafka. Draining a kind node during `api-test.js` keeps the error rate at 0, thanks to the PDBs.
 
 ### K12: Local LGTM stack and runbook
@@ -215,3 +216,4 @@ Slices run top to bottom; only the `execute-plan` coordinator edits this table.
 | 2026-10-07 | K11: Pod Security `restricted` is enforced from K1, K11 only checks every pod passes. Goal: Compose and kind can't run together (both bind 80/443). Layout: `scripts/k8s/` helpers listed. K2: dropped stale "today it uses 17" | Found while implementing and reviewing K1 and K2 | K1, K2, K11 |
 | 2026-10-07 | K4 no longer gated on Grafana Cloud OTLP credentials in CI; the exporter config is kept as is. K3: smoke checks an unrouted path returns 404 (no placeholder route). D6: bundle is JKS and PKCS12. K12: note on Gateway `allowedRoutes` for Grafana | User decision on the K4 gate; findings from the K3 review | K3, K4, K12 |
 | 2026-10-07 | K7, K8, K9, K12 add their routes to the NGF tracing policy. K12 accounts for NGF parity gaps (stub_status, route/sse log fields, url.path). TR-K10 records the `observability` namespace as an accepted exception. §Topology and K11 add the otel-agent, gateway and kube-apiserver telemetry edges | Findings from the K4 review | K7, K8, K9, K11, K12 |
+| 2026-10-07 | TR-K3 names operator-generated CNPG credentials as an exception. D2 backups are now delivered: K11 adds CNPG scheduled backups and WAL archiving to an in-cluster object store, with a restore check | Findings from the K5 review | K11 |
