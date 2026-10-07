@@ -1,4 +1,11 @@
+server:
+  # Finish in-flight requests on SIGTERM instead of cutting them (TR-K4); new requests are refused meanwhile.
+  shutdown: graceful
+
 spring:
+  lifecycle:
+    # Upper bound for the graceful drain. Fits a 30 s terminationGracePeriodSeconds with a preStop drain.
+    timeout-per-shutdown-phase: 20s
   application:
     name: Polaris
   threads:

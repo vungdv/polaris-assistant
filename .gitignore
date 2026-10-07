@@ -174,3 +174,6 @@ data/
 
 # Pinned Kubernetes tooling installed by scripts/k8s/tools.sh
 .tools/
+
+# Image tag pins generated from the git HEAD by scripts/k8s/lib.sh (write_image_pins)
+deploy/k8s/overlays/local/images/

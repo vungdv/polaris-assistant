@@ -1,0 +1,64 @@
+# Application images (plan k8s-deployment, K2; TR-K2): builds each app from its Dockerfile, checks that it runs as a
+# numeric non-root UID, and on a push to main pushes ghcr.io/<owner>/<app>:<git-sha>. Pull requests build without
+# pushing. Locally, `make k8s-images` builds the same images and loads them into kind.
+
+name: Images
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # Never cancel a push to main half way: every main commit gets its image
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  image:
+    name: Build ${{ matrix.app }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [ polaris, polaris-assistant, polaris-fulfilment-emulator ]
+    env:
+      PUSH: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    steps:
+    - uses: actions/checkout@v7
+    - name: Image name
+      # GHCR repository names must be lowercase; the owner may not be
+      run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/${{ matrix.app }}:${GITHUB_SHA}" >> "$GITHUB_ENV"
+    - uses: docker/setup-buildx-action@v4
+    - name: Build
+      uses: docker/build-push-action@v7
+      with:
+        context: .
+        file: apps/${{ matrix.app }}/Dockerfile
+        tags: ${{ env.IMAGE }}
+        labels: |
+          org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          org.opencontainers.image.revision=${{ github.sha }}
+        load: true
+        cache-from: type=gha,scope=${{ matrix.app }}
+        cache-to: type=gha,mode=max,scope=${{ matrix.app }}
+    - name: Check the image runs as a numeric non-root UID
+      run: ./scripts/k8s/check-image-user.sh "$IMAGE"
+    - name: Log in to GHCR
+      if: env.PUSH == 'true'
+      uses: docker/login-action@v4
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    - name: Push
+      if: env.PUSH == 'true'
+      run: docker push "$IMAGE"

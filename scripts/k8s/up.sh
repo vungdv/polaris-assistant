@@ -15,7 +15,8 @@ else
     die "cluster creation failed. If host ports 80/443 are taken (Compose's nginx), run 'make down' first or set KIND_CONFIG"
 fi
 
-log "applying ${K8S_OVERLAY#"$REPO_ROOT"/}"
+write_image_pins
+log "applying ${K8S_OVERLAY#"$REPO_ROOT"/} (app images pinned to $IMAGE_TAG)"
 kctl apply -k "$K8S_OVERLAY"
 kctl wait --for=jsonpath='{.status.phase}'=Active "namespace/$K8S_NAMESPACE" --timeout=60s >/dev/null
 log "cluster '$KIND_CLUSTER_NAME' is up (context $KUBE_CONTEXT)"
