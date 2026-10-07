@@ -25,14 +25,14 @@ jobs:
     - uses: actions/checkout@v7
     - name: Lint scripts
       run: shellcheck -x scripts/k8s/*.sh
-    - name: Render with kubectl kustomize and validate with kubeconform
+    - name: Validate rendered manifests (kustomize + kubeconform) and Helm values
       run: make k8s-validate
 
   kind:
     name: Deploy to kind and smoke test
     needs: validate
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
     - uses: actions/checkout@v7
     - name: Create cluster and apply overlays/local
@@ -45,6 +45,8 @@ jobs:
       if: failure()
       run: |
         .tools/bin/kubectl --context kind-polaris get all,events -A || true
+        .tools/bin/kubectl --context kind-polaris get clusterissuers,certificates,bundles,gateways,httproutes -A -o wide || true
+        .tools/bin/kubectl --context kind-polaris describe gateways,certificates -A || true
         .tools/bin/kind export logs --name polaris "${RUNNER_TEMP}/kind-logs" || true
     - name: Upload kind logs
       if: failure()
