@@ -1,0 +1,7 @@
+# Kafka (K6, D3): one Strimzi-managed KRaft cluster `kafka` with a node pool of three dual-role nodes. Needs the
+# Strimzi cluster operator and its CRDs (platform/strimzi), which scripts/k8s/platform.sh installs first.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: polaris
+resources:
+  - kafka.yaml

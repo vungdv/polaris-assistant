@@ -1,0 +1,79 @@
+# The Kafka cluster (K6, D3, TR-K6), Compose's kafka-1..3: three KRaft nodes that are each broker and controller, so
+# the controller quorum (3 voters) and every partition (RF 3, min ISR 2) survive the loss of any one node.
+#
+# Clients bootstrap from the Service `kafka-kafka-bootstrap:9092` (the apps from K8 and K10 on); each node is
+# `kafka-dual-role-<id>.kafka-kafka-brokers:9092`. Strimzi generates the KRaft cluster ID once and keeps it in the
+# Kafka status, so the volumes survive restarts without Compose's fixed CLUSTER_ID.
+#
+# Topics stay provisioned by their owning service at startup (D10): the Entity Operator (Topic and User Operators) is
+# not deployed. The User Operator would only manage KafkaUser credentials and ACLs, and the listener has no
+# authentication, as in Compose.
+apiVersion: kafka.strimzi.io/v1
+kind: Kafka
+metadata:
+  name: kafka
+  labels:
+    app.kubernetes.io/name: kafka
+    app.kubernetes.io/part-of: polaris
+spec:
+  kafka:
+    # The newest Kafka that the pinned Strimzi runs (deploy/k8s/versions.env); Compose runs 3.9.1, which Strimzi no
+    # longer supports. The metadata version follows this version's default.
+    version: 4.1.1
+    listeners:
+      # Compose's INTERNAL listener: plaintext, unauthenticated, in-cluster only (TR-X1 allows it in dev). Compose's
+      # HOST listener (localhost:9094-9096 for `make run`) has no equivalent; use `make k8s-kafka-*` or port-forward.
+      - name: plain
+        port: 9092
+        type: internal
+        tls: false
+    config:
+      # Cluster defaults, as in Compose: 3 replicas, and acks=all needs 2 in sync, so one node can be down without
+      # losing a write. Topics are never auto-created.
+      auto.create.topics.enable: false
+      default.replication.factor: 3
+      min.insync.replicas: 2
+      offsets.topic.replication.factor: 3
+      transaction.state.log.replication.factor: 3
+      transaction.state.log.min.isr: 2
+      group.initial.rebalance.delay.ms: 0
+---
+# The three nodes. Each has its own PersistentVolumeClaim (data-0-kafka-dual-role-<id>), which also holds the KRaft
+# metadata log, so data and cluster membership survive pod restarts. Strimzi adds a PodDisruptionBudget that allows
+# one node down at a time.
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaNodePool
+metadata:
+  name: dual-role
+  annotations:
+    # Node ids 1-3, as Compose's kafka-1..3 (KAFKA_NODE_ID), so `make k8s-kafka-* NODE=<id>` names the same node ids.
+    strimzi.io/next-node-ids: "[1-3]"
+  labels:
+    strimzi.io/cluster: kafka
+    app.kubernetes.io/name: kafka
+    app.kubernetes.io/part-of: polaris
+spec:
+  replicas: 3
+  roles:
+    - controller
+    - broker
+  storage:
+    type: jbod
+    volumes:
+      # The volume comes from the cluster's default StorageClass. The claims are kept if the Kafka is deleted.
+      - id: 0
+        type: persistent-claim
+        size: 2Gi
+        kraftMetadata: shared
+        deleteClaim: false
+  # A fixed heap, well below the memory limit: the rest is page cache, metaspace and direct buffers, plus headroom for
+  # the admin tools that `make k8s-kafka-*` and the smoke test run in the container (each with a 128m heap).
+  jvmOptions:
+    -Xms: 384m
+    -Xmx: 384m
+  resources:
+    requests:
+      cpu: 100m
+      memory: 768Mi
+    limits:
+      memory: 1280Mi

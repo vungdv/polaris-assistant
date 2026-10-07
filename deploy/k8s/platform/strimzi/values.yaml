@@ -1,0 +1,40 @@
+# Helm values for the Strimzi cluster operator (K6, D3), installed by scripts/k8s/platform.sh from the upstream chart
+# ($STRIMZI_CHART at $STRIMZI_VERSION, deploy/k8s/versions.env) as the release `strimzi` in its own namespace `strimzi`.
+# The operator image and the Kafka images it deploys are tagged with the chart version, so the chart pin pins them.
+# platform.sh applies the chart's kafka.strimzi.io CRDs before the release (Helm installs crds/ only once and never
+# upgrades them). The Kafka cluster itself is in deploy/k8s/base/kafka.
+
+# Watch only the app namespace (plus the operator's own, which the chart always adds). The chart creates the operator's
+# RoleBindings in `polaris`, so the namespace must exist first; platform.sh applies it.
+watchNamespaces:
+  - polaris
+
+extraEnvs:
+  # The Kafka pods run in `polaris`, which enforces Pod Security `restricted` (TR-K10). Strimzi's default provider sets
+  # no container security context; the `restricted` provider adds runAsNonRoot, no privilege escalation, all
+  # capabilities dropped and seccomp RuntimeDefault to every pod it creates.
+  - name: STRIMZI_POD_SECURITY_PROVIDER_CLASS
+    value: restricted
+
+# NetworkPolicies come in K11, with one default-deny allow list for the whole namespace (§Topology). Strimzi's own
+# per-cluster policies would add a second, partial one, so the operator doesn't generate them.
+generateNetworkPolicy: false
+
+# The operator pod itself meets `restricted` too (the image runs as UID 1001; /tmp is the chart's emptyDir).
+podSecurityContext:
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+
+# The chart's default is 384Mi with a 1-CPU limit; requests are lowered for kind, memory limit kept.
+resources:
+  requests:
+    cpu: 50m
+    memory: 256Mi
+  limits:
+    memory: 384Mi

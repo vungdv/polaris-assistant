@@ -5,3 +5,4 @@ resources:
   - edge
   - data
   - redis
+  - kafka

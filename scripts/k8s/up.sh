@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Creates the local kind cluster (if it doesn't exist yet), installs the platform components (platform.sh) and
-# applies the local overlay, then waits for the edge and the data stores to be ready. Safe to re-run.
+# applies the local overlay, then waits for the edge, the data stores and Kafka to be ready. Safe to re-run.
 set -euo pipefail
 # shellcheck source=SCRIPTDIR/lib.sh
 source "$(dirname "$0")/lib.sh"
@@ -44,4 +44,9 @@ for cluster in "${PG_CLUSTERS[@]}"; do
     --timeout="$K8S_WAIT_TIMEOUT" >/dev/null
 done
 kctl -n "$K8S_NAMESPACE" rollout status "deployment/$REDIS" --timeout="$K8S_WAIT_TIMEOUT" >/dev/null
+
+# Kafka (K6): the operator reports the Kafka Ready once every node is running and the listeners are up.
+log "waiting for the Kafka cluster $KAFKA_CLUSTER"
+kctl -n "$K8S_NAMESPACE" wait --for=condition=Ready "kafka.kafka.strimzi.io/$KAFKA_CLUSTER" \
+  --timeout="$K8S_WAIT_TIMEOUT" >/dev/null
 log "cluster '$KIND_CLUSTER_NAME' is up (context $KUBE_CONTEXT)"

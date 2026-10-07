@@ -38,7 +38,17 @@ export KUBECONFIG="$K8S_KUBECONFIG"
   CNPG_NAMESPACE=cnpg-system
   PG_CLUSTERS=(polaris-db keycloak-db)
   REDIS=redis
+  # Kafka (K6): the Strimzi cluster operator in its own namespace (platform/strimzi), and the Kafka cluster with its
+  # node pool in the app namespace (base/kafka). Strimzi names the pods <cluster>-<pool>-<node id> and the bootstrap
+  # Service <cluster>-kafka-bootstrap.
+  STRIMZI_RELEASE=strimzi
+  STRIMZI_NAMESPACE=strimzi
+  KAFKA_CLUSTER=kafka
+  KAFKA_NODE_POOL=dual-role
+  KAFKA_BOOTSTRAP="$KAFKA_CLUSTER-kafka-bootstrap:9092"
 }
+# kafka_pod <node id>: the pod name of a Kafka node.
+kafka_pod() { printf '%s-%s-%s' "$KAFKA_CLUSTER" "$KAFKA_NODE_POOL" "$1"; }
 # Untracked env file with the keys of .env.template (TR-K3): the source of the cluster's Secrets. Optional so far: K4
 # reads only the GRAFANA_CLOUD_* keys from it.
 K8S_ENV_FILE="${K8S_ENV_FILE:-$K8S_DIR/.env.local}"
