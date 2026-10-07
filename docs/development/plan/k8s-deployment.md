@@ -28,7 +28,7 @@ Compose stays the inner-loop dev environment. Kubernetes doesn't replace it in t
 | TR-K7 | **Standard edge:** north–south traffic goes through the Gateway API (`Gateway` + `HTTPRoute`). TLS for `polaris.local`, `id.polaris.local` and `grafana.polaris.local` comes from cert-manager. SSE routes don't buffer and allow long-lived streams |
 | TR-K8 | **One issuer:** tokens are issued and validated against the public issuer `https://id.polaris.local/realms/polaris`, both from browsers and from inside the cluster. Apps trust the cluster CA through a mounted truststore, not by running as root |
 | TR-K9 | **Observable by default:** every app and the gateway export OTLP to an in-cluster OTel Collector. Telemetry carries Kubernetes resource attributes (`k8s.namespace.name`, `k8s.pod.name`, `k8s.deployment.name`). W3C trace context is continuous gateway → `polaris` → `polaris-assistant` (MCP) → Kafka → emulator |
-| TR-K10 | **Least privilege:** the namespace enforces Pod Security `restricted`. Pods run non-root with a read-only root filesystem where possible. NetworkPolicies default-deny and allow only the flows listed in §Topology |
+| TR-K10 | **Least privilege:** the namespace enforces Pod Security `restricted`. Pods run non-root with a read-only root filesystem where possible. Accepted exception (K4): the `observability` namespace runs Pod Security `privileged` for the `otel-agent` log DaemonSet (read-only hostPath to the Gateway pod's logs, no token, no ports, all capabilities dropped), because NGF has no syslog or OTLP access-log output. NetworkPolicies default-deny and allow only the flows listed in §Topology |
 | TR-K11 | **Verified in CI:** every slice adds to an automated smoke test that runs against a kind cluster in GitHub Actions, on the same public interfaces used in production (HTTPS through the gateway, OIDC, Kafka) |
 
 ## Decisions (to confirm in K1's ADR)
@@ -65,6 +65,8 @@ flowchart LR
   emu -->|claim REST| polaris
   kc --> kdb[(keycloak-db<br/>CNPG)]
   polaris & assistant & emu & kc & gw -.->|OTLP| otel[OTel Collector] -.-> cloud[(Grafana Cloud)]
+  otelagent[otel-agent<br/>observability ns] -.->|OTLP| otel
+  otel -.->|k8s_attributes| api[(kube-apiserver)]
   polaris & assistant & emu -.->|JWKS via id.polaris.local| gw
 ```
 
@@ -157,14 +159,14 @@ Slices run top to bottom; only the `execute-plan` coordinator edits this table.
 **Covers:** TR-K8 (issuer), D4.
 - Keycloak Operator. A `Keycloak` CR in production mode on `keycloak-db`, hostname `https://id.polaris.local`, proxy headers `xforwarded`, and tracing to the Collector.
 - `KeycloakRealmImport` for `master-realm.json` and `polaris-realm.json`, with `DEFAULT_PASSWORD` and `POLARIS_FULFILMENT_EMULATOR_SECRET` as placeholders from a Secret. The realm files stay the single source in `docker/keycloak/`, referenced by the overlay, not copied.
-- An `HTTPRoute` for `id.polaris.local`.
+- An `HTTPRoute` for `id.polaris.local`. Add each new `HTTPRoute` to `base/edge/tracing-policy.yaml` (NGF traces only routes in its `targetRefs`, at most 16).
 - Smoke: OIDC discovery at `https://id.polaris.local/realms/polaris/.well-known/openid-configuration` returns that issuer, both from the host and from a pod. A password-grant token is issued for a seeded test user.
 
 ### K8: Order & Catalog (`polaris`) and Swagger UI
 **Covers:** TR-K3, TR-K4, TR-K5, TR-K8, TR-K9 for the core context.
 - Deployment (2 replicas), Service, ConfigMap and Secret that carry the env vars from the Compose `polaris` service, without dev-only flags (`SPRING_JPA_SHOW-SQL`, the JDBC bind logging). Datasource credentials come from the CNPG Secret. The truststore is mounted from the K3 bundle. Non-root, read-only root filesystem with an `emptyDir` for `/tmp`.
 - Probes on `/actuator/health/liveness` and `/actuator/health/readiness`, a `startupProbe` that covers Flyway, and a `preStop` drain. PodDisruptionBudget `minAvailable: 1`.
-- `HTTPRoute`s on `polaris.local` for `/` and for `/mcp/` (SSE: no buffering, long request timeout). Swagger UI Deployment and route for `/swagger-ui`, with the same spec URLs as Compose.
+- `HTTPRoute`s on `polaris.local` for `/` and for `/mcp/` (SSE: no buffering, long request timeout). Swagger UI Deployment and route for `/swagger-ui`, with the same spec URLs as Compose. Add each new `HTTPRoute` to `base/edge/tracing-policy.yaml` (NGF traces only routes in its `targetRefs`, at most 16).
 - Verified with 2 replicas starting at once: Flyway applies each migration exactly once. The outbox relay hands off each event once, in per-key order (re-runs the E3 two-instance guarantee on the cluster). A rolling restart under `tests/perf/api-test.js` load returns no 5xx.
 - Smoke: `tests/perf/api-test.js` passes against `https://polaris.local`, and a request trace shows Gateway and `polaris` spans in one trace.
 
@@ -172,7 +174,7 @@ Slices run top to bottom; only the `execute-plan` coordinator edits this table.
 **Covers:** TR-K3, TR-K4, TR-K5, TR-K9 for the assistant context.
 - Deployment (2 replicas), Service, ConfigMap and Secret mapped from the Compose service. `POLARIS_MCP_CORE_URL` and `POLARIS_CORE_API_BASE_URL` point at the `polaris` Service. `GEMINI_API_KEY`, `TYPESAFE_API_KEY` and the `AGENTO11Y_*` settings come from the Secret.
 - Readiness keeps today's semantics: it checks db and `polarisMcp` only, so Gemini or TypeSafe outages never take pods out of the Service.
-- `HTTPRoute`s for `/api/v1/assistant` (SSE) and `/v3/api-docs/assistant`. `terminationGracePeriodSeconds` covers the turn time budget, so a rolling restart doesn't cut an in-flight SSE turn.
+- `HTTPRoute`s for `/api/v1/assistant` (SSE) and `/v3/api-docs/assistant`. `terminationGracePeriodSeconds` covers the turn time budget, so a rolling restart doesn't cut an in-flight SSE turn. Add each new `HTTPRoute` to `base/edge/tracing-policy.yaml` (NGF traces only routes in its `targetRefs`, at most 16).
 - The assistant's sessions and order drafts survive a replica switch mid-conversation (JPA session store + Redis intents). Verified by pinning consecutive turns to different pods.
 - Smoke: `make seed-shoppers` and `make chat-scenarios` pass through the Gateway, and one trace spans Gateway → assistant → `polaris` (MCP).
 - Risk, out of scope: the assistant uses `ddl-auto: update` on the shared database. That conflicts with forward-only migrations and becomes riskier with multiple replicas. Raised as a follow-up, not fixed here.
@@ -184,7 +186,7 @@ Slices run top to bottom; only the `execute-plan` coordinator edits this table.
 
 ### K11: Hardening: NetworkPolicies, autoscaling, disruption
 **Covers:** TR-K5, TR-K10.
-- A default-deny NetworkPolicy for the namespace, plus allow rules for exactly the edges in §Topology, DNS, and egress to Gemini, TypeSafe and Grafana Cloud.
+- A default-deny NetworkPolicy for the namespace, plus allow rules for exactly the edges in §Topology (including `otel-agent` → Collector, the NGF data plane → Collector, and Collector → kube-apiserver), DNS, and egress to Gemini, TypeSafe and Grafana Cloud.
 - HPA on CPU for `polaris` and `polaris-assistant` (min 2, max 4 locally). metrics-server installed in kind.
 - Every pod passes Pod Security `restricted`, which the namespace has enforced since K1 (TR-K10).
 - Smoke: a pod outside the allow list can't reach `polaris-db` or Kafka. Draining a kind node during `api-test.js` keeps the error rate at 0, thanks to the PDBs.
@@ -192,7 +194,7 @@ Slices run top to bottom; only the `execute-plan` coordinator edits this table.
 ### K12: Local LGTM stack and runbook
 **Covers:** TR-K9 (local parity with Compose dashboards), D8 follow-up.
 - Optional `overlays/local-lgtm` component: Prometheus, Loki, Tempo and Grafana from upstream charts, configured from the existing files under `docker/telemetry/` (dashboards, SLO rules, datasources). Grafana SSO through the Keycloak master realm, as in Compose. `HTTPRoute` for `grafana.polaris.local`. The K3 Gateway listeners accept routes from the `polaris` namespace only, so Grafana in another namespace needs `allowedRoutes` widened for its listener.
-- The Collector fans out to both the local stack and Grafana Cloud when the component is enabled.
+- The Collector fans out to both the local stack and Grafana Cloud when the component is enabled. NGF parity gaps vs the Compose nginx: no `stub_status` (use NGF's Prometheus metrics on port 9113 instead), no `route`/`sse` access-log fields, and no `url.path` on gateway spans. Dashboards and SLO rules are adjusted for these. Add each new `HTTPRoute` to `base/edge/tracing-policy.yaml` (NGF traces only routes in its `targetRefs`, at most 16).
 - `make test-rules` still passes against the same rule files.
 - `docs/operations/k8s-runbook.md`: bring up, tear down, secrets, image reload, Kafka and Postgres admin, rolling restart, troubleshooting. The root README links it.
 
@@ -212,3 +214,4 @@ Slices run top to bottom; only the `execute-plan` coordinator edits this table.
 | 2026-10-06 | Fixed slice references: D8 now points to K12 for the local LGTM stack, §Topology to K11 for NetworkPolicies | Stale numbering from an earlier draft | K11, K12 |
 | 2026-10-07 | K11: Pod Security `restricted` is enforced from K1, K11 only checks every pod passes. Goal: Compose and kind can't run together (both bind 80/443). Layout: `scripts/k8s/` helpers listed. K2: dropped stale "today it uses 17" | Found while implementing and reviewing K1 and K2 | K1, K2, K11 |
 | 2026-10-07 | K4 no longer gated on Grafana Cloud OTLP credentials in CI; the exporter config is kept as is. K3: smoke checks an unrouted path returns 404 (no placeholder route). D6: bundle is JKS and PKCS12. K12: note on Gateway `allowedRoutes` for Grafana | User decision on the K4 gate; findings from the K3 review | K3, K4, K12 |
+| 2026-10-07 | K7, K8, K9, K12 add their routes to the NGF tracing policy. K12 accounts for NGF parity gaps (stub_status, route/sse log fields, url.path). TR-K10 records the `observability` namespace as an accepted exception. §Topology and K11 add the otel-agent, gateway and kube-apiserver telemetry edges | Findings from the K4 review | K7, K8, K9, K11, K12 |
