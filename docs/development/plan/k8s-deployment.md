@@ -99,8 +99,8 @@ Slices run top to bottom; only the `execute-plan` coordinator edits this table.
 | 2 | K2 | Application images in CI | `done` | GHCR package write permission on the repo | `k8s/k2-app-images` | [#3](https://github.com/vungdv/polaris-assistant/pull/3) | Merged de719a9. Flaky trunk tests fixed in #4 (0db2cf1) |
 | 3 | K3 | Edge: TLS, Gateway and DNS | `done` | — | `k8s/k3-edge` | [#5](https://github.com/vungdv/polaris-assistant/pull/5) | Merged 23fdda9 |
 | 4 | K4 | Observability pipeline | `done` | — | `k8s/k4-observability` | [#7](https://github.com/vungdv/polaris-assistant/pull/7) | Merged 8bfee4c |
-| 5 | K5 | Data stores: PostgreSQL and Redis | `approved` | — | `k8s/k5-data-stores` | [#9](https://github.com/vungdv/polaris-assistant/pull/9) | |
-| 6 | K6 | Kafka cluster | `todo` | — | | | |
+| 5 | K5 | Data stores: PostgreSQL and Redis | `done` | — | `k8s/k5-data-stores` | [#9](https://github.com/vungdv/polaris-assistant/pull/9) | Merged 19f4d2e |
+| 6 | K6 | Kafka cluster | `in-progress` | — | | | |
 | 7 | K7 | Identity: Keycloak | `todo` | — | | | |
 | 8 | K8 | Order & Catalog (`polaris`) and Swagger UI | `todo` | — | | | |
 | 9 | K9 | Assistant (`polaris-assistant`) | `todo` | Gemini and TypeSafe API keys available to CI as secrets | | | |
