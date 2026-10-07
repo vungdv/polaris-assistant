@@ -1,9 +1,7 @@
 package vn.danang.polaris.catalog.service;
 
 import java.math.BigDecimal;
-import java.time.Duration;
 import java.util.List;
-import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -17,6 +15,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.cache.Cache;
 import org.springframework.cache.CacheManager;
 import org.springframework.cache.caffeine.CaffeineCacheManager;
 import org.springframework.context.annotation.Import;
@@ -45,17 +44,13 @@ import vn.danang.polaris.web.exception.PriceChangedException;
  * path serves stale data. That includes stock changed by placing or cancelling an order, which
  * evicts only once the order transaction commits.
  *
- * <p>The Redis write path in this environment commits the underlying SET/DEL slightly after the
- * Java call returns (a sub-millisecond window, invisible to any real request but reproducible in
- * a zero-delay test), so assertions that depend on a key's Redis-visible state use
- * {@link #awaitRedisKey} to poll for that state rather than checking it immediately.
+ * <p>L2 writes are immediate ({@link CacheConfig} configures the Redis cache writer that way), so
+ * every assertion checks a key's Redis state right after the call that put or evicted it.
  */
 @SpringBootTest
 @Transactional
 @Import(TestcontainersConfiguration.class)
 class ProductCacheIntegrationTest {
-
-    private static final Duration AWAIT_TIMEOUT = Duration.ofSeconds(2);
 
     @Autowired
     private ProductService productService;
@@ -104,7 +99,7 @@ class ProductCacheIntegrationTest {
     void getProductById_writesThroughToRedis() {
         productService.getProductById(productId);
 
-        boolean exists = awaitRedisKey(idKey(productId), true);
+        boolean exists = inRedis(idKey(productId));
         assertThat(exists).isTrue();
     }
 
@@ -112,7 +107,7 @@ class ProductCacheIntegrationTest {
     @DisplayName("a cold L1 (e.g. after eviction/restart) is served from Redis L2, not the database")
     void getProductById_afterLocalEviction_servedFromRedisWithoutDbHit() {
         productService.getProductById(productId);
-        awaitRedisKey(idKey(productId), true);
+        assertThat(inRedis(idKey(productId))).isTrue();
         localCacheManager.getCache(CacheConfig.PRODUCTS_CACHE).clear();
         clearInvocations(productRepository);
 
@@ -126,15 +121,15 @@ class ProductCacheIntegrationTest {
     @DisplayName("adjustInventoryById evicts both cache tiers so the next read sees fresh stock")
     void adjustInventoryById_evictsCache_nextReadSeesFreshStock() {
         ProductResponse before = productService.getProductById(productId);
-        awaitRedisKey(idKey(productId), true);
+        assertThat(inRedis(idKey(productId))).isTrue();
 
         productService.adjustInventoryById(productId, 7);
-        awaitRedisKey(idKey(productId), false);
+        assertThat(inRedis(idKey(productId))).isFalse();
         ProductResponse after = productService.getProductById(productId);
 
         assertThat(after.stockQuantity()).isEqualTo(before.stockQuantity() + 7);
         // Re-populated by the read above with the fresh value, not left stale.
-        assertThat(awaitRedisKey(idKey(productId), true)).isTrue();
+        assertThat(inRedis(idKey(productId))).isTrue();
         verify(productRepository, times(2)).findById(eq(productId));
     }
 
@@ -142,10 +137,10 @@ class ProductCacheIntegrationTest {
     @DisplayName("adjustInventory by SKU evicts the cache entry keyed by the product's ID")
     void adjustInventory_bySku_evictsCacheKeyedById() {
         productService.getProductById(productId);
-        awaitRedisKey(idKey(productId), true);
+        assertThat(inRedis(idKey(productId))).isTrue();
 
         productService.adjustInventory("NG-CHARGER-02", -5);
-        awaitRedisKey(idKey(productId), false);
+        assertThat(inRedis(idKey(productId))).isFalse();
         ProductResponse after = productService.getProductById(productId);
 
         verify(productRepository, times(2)).findById(eq(productId));
@@ -166,11 +161,11 @@ class ProductCacheIntegrationTest {
     @DisplayName("adjustInventoryById also evicts the SKU-keyed cache entry, not just the id-keyed one")
     void adjustInventoryById_evictsSkuKeyedCacheToo() {
         productService.getProductBySku("NG-CHARGER-02");
-        awaitRedisKey(skuKey("NG-CHARGER-02"), true);
+        assertThat(inRedis(skuKey("NG-CHARGER-02"))).isTrue();
         clearInvocations(productRepository);
 
         productService.adjustInventoryById(productId, 3);
-        awaitRedisKey(skuKey("NG-CHARGER-02"), false);
+        assertThat(inRedis(skuKey("NG-CHARGER-02"))).isFalse();
         productService.getProductBySku("NG-CHARGER-02");
 
         // The id-keyed mutation must also evict the sku-keyed entry, or this would be 0.
@@ -185,8 +180,8 @@ class ProductCacheIntegrationTest {
                 new BigDecimal("9.99"), 5, true);
 
         ProductResponse created = productService.createProduct(request);
-        awaitRedisKey(idKey(created.id()), true);
-        awaitRedisKey(skuKey("NG-CACHE-TEST-01"), true);
+        assertThat(inRedis(idKey(created.id()))).isTrue();
+        assertThat(inRedis(skuKey("NG-CACHE-TEST-01"))).isTrue();
         clearInvocations(productRepository);
 
         ProductResponse byId = productService.getProductById(created.id());
@@ -198,6 +193,27 @@ class ProductCacheIntegrationTest {
         verify(productRepository, times(0)).findBySkuIgnoreCase("NG-CACHE-TEST-01");
     }
 
+    @Test
+    @DisplayName("L2 puts, evictions and clears have landed in Redis when the cache call returns")
+    void redisWrites_areVisibleAsSoonAsTheCacheCallReturns() {
+        ProductResponse product = productService.getProductById(productId);
+        Cache products = cacheManager.getCache(CacheConfig.PRODUCTS_CACHE);
+
+        products.put(productId, product);
+        products.put(localSkuKey("NG-CHARGER-02"), product);
+        assertThat(inRedis(idKey(productId))).isTrue();
+
+        products.evict(productId);
+        assertThat(inRedis(idKey(productId))).isFalse();
+
+        products.clear();
+        assertThat(inRedis(skuKey("NG-CHARGER-02"))).isFalse();
+        // A cold L1 must now fall through to the database, not to a stale L2 entry still awaiting deletion.
+        clearInvocations(productRepository);
+        productService.getProductById(productId);
+        verify(productRepository, times(1)).findById(eq(productId));
+    }
+
     // Order placement evicts only after commit, and this class's test transaction never commits,
     // so these tests opt out of it and remove the order they create themselves.
 
@@ -207,24 +223,24 @@ class ProductCacheIntegrationTest {
     void placeAndCancelOrder_evictCacheAfterCommit_nextReadsSeeFreshStock() {
         ProductResponse before = productService.getProductBySku("NG-CHARGER-02");
         productService.getProductById(productId);
-        assertThat(awaitRedisKey(skuKey("NG-CHARGER-02"), true)).isTrue();
-        assertThat(awaitRedisKey(idKey(productId), true)).isTrue();
+        assertThat(inRedis(skuKey("NG-CHARGER-02"))).isTrue();
+        assertThat(inRedis(idKey(productId))).isTrue();
 
         Order order = orderService.placeOrder(1L, List.of(new OrderItemRequest("NG-CHARGER-02", 2)), null);
         try {
-            // L1 eviction happens synchronously in afterCommit; the Redis DEL is polled for (see class Javadoc)
+            // Both tiers are evicted synchronously in afterCommit
             assertThat(localCacheManager.getCache(CacheConfig.PRODUCTS_CACHE).get(localSkuKey("NG-CHARGER-02"))).isNull();
             assertThat(localCacheManager.getCache(CacheConfig.PRODUCTS_CACHE).get(productId)).isNull();
-            assertThat(awaitRedisKey(skuKey("NG-CHARGER-02"), false)).isFalse();
-            assertThat(awaitRedisKey(idKey(productId), false)).isFalse();
+            assertThat(inRedis(skuKey("NG-CHARGER-02"))).isFalse();
+            assertThat(inRedis(idKey(productId))).isFalse();
             assertThat(productService.getProductBySku("NG-CHARGER-02").stockQuantity()).isEqualTo(before.stockQuantity() - 2);
             assertThat(productService.getProductById(productId).stockQuantity()).isEqualTo(before.stockQuantity() - 2);
-            assertThat(awaitRedisKey(skuKey("NG-CHARGER-02"), true)).isTrue();
+            assertThat(inRedis(skuKey("NG-CHARGER-02"))).isTrue();
 
             orderService.cancelOrder(order.getOrderNumber());
 
             assertThat(localCacheManager.getCache(CacheConfig.PRODUCTS_CACHE).get(localSkuKey("NG-CHARGER-02"))).isNull();
-            assertThat(awaitRedisKey(skuKey("NG-CHARGER-02"), false)).isFalse();
+            assertThat(inRedis(skuKey("NG-CHARGER-02"))).isFalse();
             assertThat(productService.getProductBySku("NG-CHARGER-02").stockQuantity()).isEqualTo(before.stockQuantity());
         } finally {
             orderRepository.findByOrderNumber(order.getOrderNumber()).ifPresent(orderRepository::delete);
@@ -236,7 +252,7 @@ class ProductCacheIntegrationTest {
     @DisplayName("a rejected order rolls back and leaves the cached product untouched")
     void rejectedOrder_rollsBack_leavesCacheUntouched() {
         productService.getProductBySku("NG-CHARGER-02");
-        assertThat(awaitRedisKey(skuKey("NG-CHARGER-02"), true)).isTrue();
+        assertThat(inRedis(skuKey("NG-CHARGER-02"))).isTrue();
 
         assertThatThrownBy(() -> orderService.placeOrder(1L,
                 List.of(new OrderItemRequest("NG-CHARGER-02", 1, new BigDecimal("0.01"))), null))
@@ -259,25 +275,7 @@ class ProductCacheIntegrationTest {
         return CacheConfig.PRODUCTS_CACHE + "::" + CacheConfig.productSkuKey(sku);
     }
 
-    /**
-     * Polls the given Redis key's presence until it matches {@code expectedPresent} or
-     * {@link #AWAIT_TIMEOUT} elapses, returning the last observed state. The put/evict commands
-     * issued by the cache land asynchronously relative to the Java call that triggers them, so
-     * checking a key's state right after such a call is inherently racy without this.
-     */
-    private boolean awaitRedisKey(String key, boolean expectedPresent) {
-        Supplier<Boolean> present = () -> Boolean.TRUE.equals(redisTemplate.hasKey(key));
-        long deadline = System.nanoTime() + AWAIT_TIMEOUT.toNanos();
-        boolean last = present.get();
-        while (last != expectedPresent && System.nanoTime() < deadline) {
-            try {
-                Thread.sleep(5);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                break;
-            }
-            last = present.get();
-        }
-        return last;
+    private boolean inRedis(String key) {
+        return Boolean.TRUE.equals(redisTemplate.hasKey(key));
     }
 }

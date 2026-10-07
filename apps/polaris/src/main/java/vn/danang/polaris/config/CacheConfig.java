@@ -11,6 +11,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
 import org.springframework.data.redis.cache.RedisCacheConfiguration;
 import org.springframework.data.redis.cache.RedisCacheManager;
+import org.springframework.data.redis.cache.RedisCacheWriter;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.data.redis.serializer.GenericJacksonJsonRedisSerializer;
 import org.springframework.data.redis.serializer.RedisSerializationContext;
@@ -89,7 +90,14 @@ public class CacheConfig {
                 .serializeKeysWith(RedisSerializationContext.SerializationPair.fromSerializer(new StringRedisSerializer()))
                 .serializeValuesWith(RedisSerializationContext.SerializationPair.fromSerializer(valueSerializer));
 
-        return RedisCacheManager.builder(redisConnectionFactory)
+        // Immediate (blocking) writes: Spring Data Redis 4 otherwise applies put/evict/clear asynchronously on the
+        // reactive Lettuce driver, fire-and-forget. TwoLevelCache relies on L2 writes having landed when the call
+        // returns: an eviction must be visible before the next read falls through to L2 (or it re-reads the stale
+        // value into L1), and a failed write must surface so it is logged and degraded to L1-only.
+        RedisCacheWriter cacheWriter = RedisCacheWriter.create(redisConnectionFactory,
+                writer -> writer.immediateWrites());
+
+        return RedisCacheManager.builder(cacheWriter)
                 .cacheDefaults(redisConfig)
                 .withCacheConfiguration(PRODUCTS_CACHE, redisConfig)
                 .build();
