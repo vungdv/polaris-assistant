@@ -15,6 +15,7 @@ K8S_NAMESPACE="${K8S_NAMESPACE:-polaris}"
 KUBE_CONTEXT="kind-$KIND_CLUSTER_NAME"
 # kind writes the cluster's credentials here (--kubeconfig), and kubectl and helm read them from here (KUBECONFIG).
 K8S_KUBECONFIG="${K8S_KUBECONFIG:-$REPO_ROOT/.tools/kubeconfig}"
+[[ "$K8S_KUBECONFIG" = /* ]] || K8S_KUBECONFIG="$REPO_ROOT/$K8S_KUBECONFIG" # a relative override is repo-relative
 export KUBECONFIG="$K8S_KUBECONFIG"
 
 # Edge (K3): third-party components from deploy/k8s/platform, and the Gateway in base/edge. NGINX Gateway Fabric
@@ -73,10 +74,9 @@ sha256() {
 
 cluster_exists() { kind get clusters 2>/dev/null | grep -qx "$KIND_CLUSTER_NAME"; }
 
-# Regenerates the kubeconfig entry of an existing cluster when it's missing (the file was deleted, or the cluster was
-# created before K8S_KUBECONFIG existed).
+# Rewrites the kubeconfig entry of an existing cluster from kind, so a deleted file or stale credentials (the cluster
+# was recreated from another worktree or by hand) never survive. Cheap and idempotent.
 ensure_kubeconfig() {
-  kubectl config get-contexts "$KUBE_CONTEXT" >/dev/null 2>&1 && return
   log "writing the kubeconfig of cluster '$KIND_CLUSTER_NAME' to $K8S_KUBECONFIG"
   kind export kubeconfig --name "$KIND_CLUSTER_NAME" --kubeconfig "$K8S_KUBECONFIG"
 }

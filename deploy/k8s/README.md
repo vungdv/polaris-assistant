@@ -21,9 +21,9 @@ Manifests and tooling for running Polaris on Kubernetes ([ADR-0021](../../docs/t
 
 Compose's nginx also binds ports 80/443: run `make down` first, or point `KIND_CONFIG` at a copy of `kind/cluster.yaml` with other host ports.
 
-The scripts keep the cluster's credentials in the untracked `.tools/kubeconfig` (override with `K8S_KUBECONFIG`), not
-in `~/.kube/config`: `make k8s-up` and `make k8s-down` never change your kubeconfig or its current context.
-`make k8s-up` and `make k8s-smoke` rewrite the file if it's missing while the cluster exists. To use your own kubectl,
+The scripts keep the cluster's credentials in the untracked `.tools/kubeconfig` (override with `K8S_KUBECONFIG`; a relative path
+is taken from the repo root), not in `~/.kube/config`: `make k8s-up` and `make k8s-down` never change your kubeconfig
+or its current context. `make k8s-up` and `make k8s-smoke` rewrite the file from kind whenever the cluster exists. To use your own kubectl,
 helm or k9s against the cluster:
 
 ```bash
