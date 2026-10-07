@@ -8,6 +8,11 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
+  data:
+    redis:
+      # Mirrors production: Redis calls fail fast, so a hung Redis degrades the product cache to L1-only.
+      timeout: 1s
+      connect-timeout: 2s
   kafka:
     admin:
       operation-timeout: 10s

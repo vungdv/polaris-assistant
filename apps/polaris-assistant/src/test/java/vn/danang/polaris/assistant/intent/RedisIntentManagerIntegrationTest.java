@@ -1,5 +1,6 @@
 package vn.danang.polaris.assistant.intent;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 
@@ -14,6 +15,8 @@ import org.junit.jupiter.api.Test;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import org.springframework.data.redis.connection.RedisStandaloneConfiguration;
+import org.springframework.data.redis.connection.lettuce.LettuceClientConfiguration;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
@@ -21,9 +24,8 @@ import vn.danang.polaris.assistant.config.AssistantIntentRedisProperties;
 
 /**
  * Exercises {@link RedisIntentManager} against a real, ephemeral Redis instance to verify the
- * seeding and read path end-to-end. Failure/fallback branches are covered with mocks in
- * {@link RedisIntentManagerTest}, since simulating a Redis outage reliably needs precise control
- * over the client that a real container doesn't give us.
+ * seeding and read path end-to-end, and the fallback when Redis hangs (container paused). Other
+ * failure/fallback branches are covered with mocks in {@link RedisIntentManagerTest}.
  */
 @Testcontainers
 class RedisIntentManagerIntegrationTest {
@@ -32,14 +34,18 @@ class RedisIntentManagerIntegrationTest {
     static GenericContainer<?> redis = new GenericContainer<>(DockerImageName.parse("redis:7-alpine"))
             .withExposedPorts(6379);
 
+    /** Same as the {@code spring.data.redis.timeout} default in application.yml. */
+    private static final Duration COMMAND_TIMEOUT = Duration.ofSeconds(1);
+
     private StringRedisTemplate redisTemplate;
     private DefaultIntentManager fallback;
     private AssistantIntentRedisProperties properties;
 
     @BeforeEach
     void setUp() {
-        LettuceConnectionFactory connectionFactory =
-                new LettuceConnectionFactory(redis.getHost(), redis.getMappedPort(6379));
+        LettuceConnectionFactory connectionFactory = new LettuceConnectionFactory(
+                new RedisStandaloneConfiguration(redis.getHost(), redis.getMappedPort(6379)),
+                LettuceClientConfiguration.builder().commandTimeout(COMMAND_TIMEOUT).build());
         connectionFactory.afterPropertiesSet();
         redisTemplate = new StringRedisTemplate(connectionFactory);
         redisTemplate.afterPropertiesSet();
@@ -98,5 +104,28 @@ class RedisIntentManagerIntegrationTest {
                 new IntentDefinition("general.conversation", "fallback v2", List.of("hi"))));
         RedisIntentManager upgraded = new RedisIntentManager(redisTemplate, newer, properties);
         assertThat(upgraded.listIntents()).extracting(IntentDefinition::description).containsExactly("fallback v2");
+    }
+
+    @Test
+    @DisplayName("Given Redis hangs, when intents are read, then the read fails fast and the default taxonomy is served")
+    void hung_redis_fails_fast_and_falls_back() throws Exception {
+        properties.setLocalCacheTtl(Duration.ZERO);
+        RedisIntentManager manager = new RedisIntentManager(redisTemplate, fallback, properties);
+        redisTemplate.opsForValue().set(properties.getKey(), new ObjectMapper().writeValueAsString(
+                List.of(new IntentDefinition("catalog.product.search", "from redis", List.of("find product")))));
+        assertThat(manager.listIntents()).extracting(IntentDefinition::id).containsExactly("catalog.product.search");
+
+        redis.getDockerClient().pauseContainerCmd(redis.getContainerId()).exec();
+        try {
+            long start = System.nanoTime();
+            List<IntentDefinition> intents = manager.listIntents();
+            Duration elapsed = Duration.ofNanos(System.nanoTime() - start);
+
+            assertThat(intents).extracting(IntentDefinition::id).containsExactly("general.conversation");
+            // Generous bound; without a command timeout Lettuce would wait 60 s.
+            assertThat(elapsed).isLessThan(Duration.ofSeconds(10));
+        } finally {
+            redis.getDockerClient().unpauseContainerCmd(redis.getContainerId()).exec();
+        }
     }
 }
