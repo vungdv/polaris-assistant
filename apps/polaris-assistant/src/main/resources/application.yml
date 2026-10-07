@@ -1,7 +1,12 @@
 server:
   port: ${SERVER_PORT:8081}
+  # Finish in-flight requests on SIGTERM instead of cutting them (TR-K4); new requests are refused meanwhile.
+  shutdown: graceful
 
 spring:
+  lifecycle:
+    # Upper bound for the graceful drain. Covers a whole chat turn (polaris.ai.turn-deadline, 25 s), so a rolling restart doesn't cut an SSE turn.
+    timeout-per-shutdown-phase: 30s
   application:
     name: Polaris-Assistant
   threads:
