@@ -1,7 +1,9 @@
 package vn.danang.polaris.catalog.service;
 
 import java.math.BigDecimal;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -19,6 +21,7 @@ import org.springframework.cache.Cache;
 import org.springframework.cache.CacheManager;
 import org.springframework.cache.caffeine.CaffeineCacheManager;
 import org.springframework.context.annotation.Import;
+import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.transaction.annotation.Propagation;
@@ -218,6 +221,32 @@ class ProductCacheIntegrationTest {
         verify(productRepository, times(1)).findById(eq(productId));
     }
 
+    @Test
+    @DisplayName("clear() removes every cache key with SCAN, across several batches, never KEYS, and leaves other keys alone")
+    void clear_usesScanAcrossBatches_andLeavesOtherKeys() {
+        int entries = 2 * CacheConfig.CLEAR_SCAN_BATCH_SIZE + 500;
+        Map<String, String> keys = new HashMap<>();
+        for (int i = 0; i < entries; i++) {
+            keys.put(CacheConfig.PRODUCTS_CACHE + "::bulk-" + i, "x");
+        }
+        redisTemplate.opsForValue().multiSet(keys);
+        String unrelated = "not-a-cache-key:" + System.nanoTime();
+        redisTemplate.opsForValue().set(unrelated, "keep");
+        long keysBefore = commandCalls("keys");
+        long scansBefore = commandCalls("scan");
+
+        try {
+            cacheManager.getCache(CacheConfig.PRODUCTS_CACHE).clear();
+
+            assertThat(redisTemplate.countExistingKeys(keys.keySet())).isZero();
+            assertThat(inRedis(unrelated)).isTrue();
+            assertThat(commandCalls("keys") - keysBefore).as("KEYS calls").isZero();
+            assertThat(commandCalls("scan") - scansBefore).as("SCAN calls").isGreaterThan(1);
+        } finally {
+            redisTemplate.delete(unrelated);
+        }
+    }
+
     // Order placement evicts only after commit, and this class's test transaction never commits,
     // so these tests opt out of it and remove the order they create themselves.
 
@@ -277,6 +306,14 @@ class ProductCacheIntegrationTest {
 
     private static String skuKey(String sku) {
         return CacheConfig.PRODUCTS_CACHE + "::" + CacheConfig.productSkuKey(sku);
+    }
+
+    /** Times Redis has executed {@code command}, from {@code INFO commandstats}. */
+    private long commandCalls(String command) {
+        String stats = redisTemplate.execute((RedisCallback<String>) connection ->
+                connection.serverCommands().info("commandstats").getProperty("cmdstat_" + command));
+        // e.g. calls=3,usec=12,usec_per_call=4.00,rejected_calls=0,failed_calls=0
+        return stats == null ? 0 : Long.parseLong(stats.replaceAll("^calls=(\\d+),.*$", "$1"));
     }
 
     private boolean inRedis(String key) {

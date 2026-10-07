@@ -9,6 +9,7 @@ import org.springframework.cache.caffeine.CaffeineCacheManager;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
+import org.springframework.data.redis.cache.BatchStrategies;
 import org.springframework.data.redis.cache.RedisCacheConfiguration;
 import org.springframework.data.redis.cache.RedisCacheManager;
 import org.springframework.data.redis.cache.RedisCacheWriter;
@@ -38,6 +39,13 @@ import vn.danang.polaris.config.cache.TwoLevelCacheManager;
 public class CacheConfig {
 
     public static final String PRODUCTS_CACHE = "products";
+
+    /**
+     * SCAN {@code COUNT} hint for {@code clear()} (and {@code @CacheEvict(allEntries = true)}): keys examined per
+     * round trip. Small enough that each SCAN stays far below the Redis command timeout, large enough that clearing
+     * a big cache takes few round trips.
+     */
+    public static final int CLEAR_SCAN_BATCH_SIZE = 1_000;
 
     /**
      * Key of a SKU lookup in {@link #PRODUCTS_CACHE}. SKU lookups share the cache with id lookups, so the key is
@@ -94,8 +102,10 @@ public class CacheConfig {
         // reactive Lettuce driver, fire-and-forget. TwoLevelCache relies on L2 writes having landed when the call
         // returns: an eviction must be visible before the next read falls through to L2 (or it re-reads the stale
         // value into L1), and a failed write must surface so it is logged and degraded to L1-only.
+        // clear() walks the cache's keys with SCAN in batches rather than the default KEYS, which blocks the shared
+        // Redis for O(all keys) and could itself exceed the command timeout on a large keyspace.
         RedisCacheWriter cacheWriter = RedisCacheWriter.create(redisConnectionFactory,
-                writer -> writer.immediateWrites());
+                writer -> writer.immediateWrites().batchStrategy(BatchStrategies.scan(CLEAR_SCAN_BATCH_SIZE)));
 
         return RedisCacheManager.builder(cacheWriter)
                 .cacheDefaults(redisConfig)
