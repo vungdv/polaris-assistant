@@ -130,7 +130,9 @@ overlay, and waits until every Cluster is `Ready` and Redis is available.
   database has one owner role and nothing else (no extra roles, databases or extensions: V9's `pg_trgm` index is a
   manual DBA note), so `bootstrap.initdb` (database + owner) mirrors it and no `managed.roles` are needed. `polaris` and
   `polaris-assistant` share `polaris-db` and its owner, as in Compose. Redis is `redis:7.4.11-alpine` (what
-  `redis:7-alpine` resolves to) pinned by digest, with persistence off (`--save "" --appendonly no`).
+  `redis:7-alpine` resolves to) pinned by digest, with persistence off (`--save "" --appendonly no`) and memory bounded
+  below the 256Mi limit (`--maxmemory 200mb --maxmemory-policy volatile-lru`: only TTL'd product-cache keys are
+  evicted, never the assistant's intent taxonomy).
 - **Credentials.** CNPG generates each owner's password into the `<cluster>-app` Secret (keys `username`, `password`,
   `host`, `port`, `dbname`, `uri`, `jdbc-uri`). Nothing is committed (TR-K3). The apps read them from K7 (Keycloak) and
   K8/K9 (`polaris`, `polaris-assistant`). Network superuser access stays off. For an admin shell:
@@ -146,7 +148,7 @@ overlay, and waits until every Cluster is `Ready` and Redis is available.
   credentials from a `restricted` probe pod (owner, database, collation, PostgreSQL 16), writes a row to `polaris-db`
   (in a throwaway schema, so Flyway's `public` stays empty), deletes the primary pod, waits for CNPG to bring it back
   (`PG_SMOKE_TIMEOUT`, default 180s) and reads the row again. It also runs `redis-cli ping` through the `redis` Service
-  and checks persistence is off.
+  and checks persistence is off and the memory bound and eviction policy are set.
 - **Validation.** kubeconform validates the Clusters against `postgresql.cnpg.io/cluster_v1.json` in the pinned CRDs
   catalog. That schema is CNPG 1.29's, identical to the Cluster CRD of the pinned chart, which is why `CNPG_VERSION` is
   held on the 1.29 line: bump it together with `CRDS_CATALOG_REF` once the catalog carries a newer schema.

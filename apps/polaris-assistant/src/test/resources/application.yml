@@ -8,6 +8,11 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
+  data:
+    redis:
+      # Mirrors production: Redis calls fail fast, so a hung Redis degrades intent lookups to the classpath taxonomy.
+      timeout: 1s
+      connect-timeout: 2s
   security:
     oauth2:
       resourceserver:

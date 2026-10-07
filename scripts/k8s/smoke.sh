@@ -354,16 +354,21 @@ else
   fail "PostgreSQL read probe did not succeed: $(tail -5 <<<"$out")"
 fi
 
-# Redis: `redis-cli ping` answers through the Service, and persistence is off as in Compose.
+# Redis: `redis-cli ping` answers through the Service, persistence is off and memory is bounded, as in Compose.
 redis_image="$(kctl -n "$K8S_NAMESPACE" get deployment "$REDIS" -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || true)"
 if out="$(run_probe redis-smoke "$redis_image" 999 "set -e
 redis-cli -h $REDIS -p 6379 ping
 echo \"save=\$(redis-cli -h $REDIS -p 6379 config get save | tail -n 1)\"
-echo \"appendonly=\$(redis-cli -h $REDIS -p 6379 config get appendonly | tail -n 1)\"")"; then
+echo \"appendonly=\$(redis-cli -h $REDIS -p 6379 config get appendonly | tail -n 1)\"
+echo \"maxmemory=\$(redis-cli -h $REDIS -p 6379 config get maxmemory | tail -n 1)\"
+echo \"maxmemory-policy=\$(redis-cli -h $REDIS -p 6379 config get maxmemory-policy | tail -n 1)\"")"; then
   log "Redis probe results:"$'\n'"$out"
   check "redis-cli ping through Service $REDIS answers PONG" grep -qx PONG <<<"$out"
   persistence_off() { grep -qx "save=" <<<"$1" && grep -qx "appendonly=no" <<<"$1"; }
   check "Redis runs with persistence off (save \"\", appendonly no), as in Compose" persistence_off "$out"
+  # 200mb = 209715200 bytes, below the 256Mi container limit; evicts only keys with a TTL (the product cache).
+  memory_bounded() { grep -qx "maxmemory=209715200" <<<"$1" && grep -qx "maxmemory-policy=volatile-lru" <<<"$1"; }
+  check "Redis memory is bounded (maxmemory 200mb, volatile-lru), as in Compose" memory_bounded "$out"
 else
   fail "Redis probe did not succeed: $(tail -5 <<<"$out")"
 fi

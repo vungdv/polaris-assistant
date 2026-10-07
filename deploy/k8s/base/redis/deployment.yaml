@@ -1,6 +1,12 @@
 # Redis 7 (K5), as Compose's `redis` service: redis:7-alpine, persistence off (`--save "" --appendonly no`), one
 # replica. It holds only cache data that the apps can rebuild (they fall back to an in-process cache when it is down),
 # so a restart starts it empty, as in Compose. `polaris` and `polaris-assistant` connect to the Service `redis:6379` in K8 and K9.
+#
+# Memory is bounded below the container limit (256Mi), so a growing cache evicts keys instead of being OOMKilled:
+# `maxmemory 200mb` leaves ~56Mi for Redis's own overhead (fragmentation, client buffers). The policy is `volatile-lru`,
+# which evicts only keys with a TTL: polaris's `products::*` cache entries (10 min TTL). The assistant's intent taxonomy
+# (`polaris:assistant:intents`, plus its `:source-sha256`) has no TTL and is never evicted: it can be edited at runtime
+# in Redis, and losing the hash would make the next startup overwrite those edits. Order drafts live in PostgreSQL.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -37,7 +43,7 @@ spec:
         - name: redis
           # 7.4.11-alpine, the release Compose's redis:7-alpine resolves to, pinned by digest (multi-arch index).
           image: redis:7.4.11-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
-          args: ["redis-server", "--save", "", "--appendonly", "no"]
+          args: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "200mb", "--maxmemory-policy", "volatile-lru"]
           ports:
             - name: redis
               containerPort: 6379
