@@ -36,6 +36,10 @@ spring:
       host: ${SPRING_DATA_REDIS_HOST:localhost}
       port: ${SPRING_DATA_REDIS_PORT:6379}
       password: ${SPRING_DATA_REDIS_PASSWORD:}
+      # Fail fast when Redis hangs or is down (Lettuce's default command timeout is 60 s); callers then
+      # degrade to the in-process cache. Redis answers in ~1 ms on a healthy network, so 1 s is ample.
+      timeout: ${SPRING_DATA_REDIS_TIMEOUT:1s}
+      connect-timeout: ${SPRING_DATA_REDIS_CONNECT_TIMEOUT:2s}
   kafka:
     # Host default for `make run` (the cluster's HOST listeners); compose sets the internal kafka-N:9092 list.
     bootstrap-servers: localhost:9094,localhost:9095,localhost:9096
