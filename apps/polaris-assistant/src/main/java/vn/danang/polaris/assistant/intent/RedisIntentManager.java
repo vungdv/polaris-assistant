@@ -5,6 +5,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.ReentrantLock;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,6 +40,13 @@ public class RedisIntentManager implements IntentManager {
     private final Clock clock;
 
     private final AtomicReference<CachedIntents> cache = new AtomicReference<>();
+
+    /**
+     * Single-flight guard for {@link #refresh}. A {@link ReentrantLock}, not {@code synchronized}: the assistant runs
+     * on virtual threads (JDK 21), where blocking inside a monitor pins the carrier thread, so a slow Redis call would
+     * pin the holder's and every waiter's carrier. Parking on a {@code ReentrantLock} unmounts the virtual thread.
+     */
+    private final ReentrantLock refreshLock = new ReentrantLock();
 
     @Autowired
     public RedisIntentManager(StringRedisTemplate redisTemplate, DefaultIntentManager fallback,
@@ -81,9 +89,19 @@ public class RedisIntentManager implements IntentManager {
 
     /**
      * Reloads from Redis, double-checking the cache after acquiring the lock so concurrent
-     * callers racing past the expired fast-path read don't all hit Redis at once.
+     * callers racing past the expired fast-path read don't all hit Redis at once: one caller reloads, the others wait
+     * for it and then read what it cached.
      */
-    private synchronized List<IntentDefinition> refresh(Instant now) {
+    private List<IntentDefinition> refresh(Instant now) {
+        refreshLock.lock();
+        try {
+            return refreshLocked(now);
+        } finally {
+            refreshLock.unlock();
+        }
+    }
+
+    private List<IntentDefinition> refreshLocked(Instant now) {
         CachedIntents cached = cache.get();
         if (cached != null && now.isBefore(cached.expiresAt())) {
             return cached.intents();
@@ -161,6 +179,11 @@ public class RedisIntentManager implements IntentManager {
         byte[] digest = java.security.MessageDigest.getInstance("SHA-256")
                 .digest(json.getBytes(java.nio.charset.StandardCharsets.UTF_8));
         return java.util.HexFormat.of().formatHex(digest);
+    }
+
+    /** Callers waiting for an in-flight refresh; lets tests line up concurrent callers deterministically. */
+    int refreshWaiters() {
+        return refreshLock.getQueueLength();
     }
 
     private record CachedIntents(List<IntentDefinition> intents, Instant expiresAt) {}
