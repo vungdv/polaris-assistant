@@ -6,8 +6,8 @@ Manifests and tooling for running Polaris on Kubernetes ([ADR-0021](../../docs/t
 |:--|:--|
 | `versions.env` | Pinned versions of kind, its node image, kubectl, kubeconform, helm, the schema catalogs and the platform charts |
 | `kind/cluster.yaml` | Local kind cluster: host ports 80/443 → NodePorts 30080/30443 |
-| `platform/` | Helm values and CRs for third-party components: cert-manager, trust-manager, NGINX Gateway Fabric, the cluster PKI (`pki/`) and the CoreDNS rewrite (`coredns/`) |
-| `base/` | Cluster-agnostic manifests: the `polaris` namespace (Pod Security `restricted`), then one directory per component (`edge/`: Gateway, certificate, HTTP redirect) |
+| `platform/` | Helm values and CRs for third-party components: cert-manager, trust-manager, NGINX Gateway Fabric, the cluster PKI (`pki/`), the CoreDNS rewrite (`coredns/`), the OpenTelemetry Collector (`otel-collector/`) and its log agent (`otel-agent/`) |
+| `base/` | Cluster-agnostic manifests: the `polaris` namespace (Pod Security `restricted`), then one directory per component (`edge/`: Gateway, certificate, HTTP redirect, tracing policy) |
 | `overlays/local/` | The kind environment: image tags, replica counts, Secrets from the untracked `deploy/k8s/.env.local` |
 | `overlays/local/images/` | Generated and untracked: the Kustomize component that pins each app image to `ghcr.io/<owner>/<app>:<git-sha>` of the current checkout |
 
@@ -70,3 +70,34 @@ curl --cacert /tmp/polaris-root-ca.pem https://polaris.local/   # 404 until app 
 ```
 
 With `KIND_CONFIG` on other host ports, add for example `--resolve polaris.local:18443:127.0.0.1` and use port 18443.
+
+## Observability: OpenTelemetry Collector
+
+`make k8s-up` installs the upstream `opentelemetry-collector` chart (`OTEL_COLLECTOR_VERSION`, contrib image at the
+chart's appVersion) twice:
+
+| Release | Kind | Namespace | Configured by | Role |
+|:--|:--|:--|:--|:--|
+| `otel-collector` | Deployment + Service (OTLP gRPC `4317`, HTTP `4318`) | `polaris` | `platform/otel-collector/values.yaml` | Receives OTLP from the Gateway (and the apps from K8 on), adds Kubernetes attributes, redacts, exports |
+| `otel-agent` | DaemonSet, no ports | `observability` | `platform/otel-agent/values.yaml` | Tails the Gateway pod's stdout on the node and forwards the access log to `otel-collector` over OTLP |
+
+- **Pipeline.** Ported from `docker/telemetry/otel-collector-config.yaml`: `memory_limiter` first, redaction and the
+  metric attribute allow-list before `batch`, bounded exporter queues. Added: the `k8s_attributes` processor (with a
+  ClusterRole to read pods, namespaces and replicasets), so every span, metric and log carries `k8s.namespace.name`,
+  `k8s.pod.name` and `k8s.deployment.name`. Gateway spans are renamed from NGINX Gateway Fabric's
+  `ngf:polaris:polaris` to Compose's `nginx-gateway`. Every span and log record is printed by the `debug` exporter
+  (`kubectl -n polaris logs deploy/otel-collector`). The local Tempo, Loki and Prometheus exporters arrive with K12.
+- **Gateway traces.** NGINX Gateway Fabric's data-plane config (`nginx.config.telemetry` in
+  `platform/nginx-gateway-fabric/values.yaml`) exports spans to `otel-collector:4317`. `base/edge/tracing-policy.yaml`
+  (an `ObservabilityPolicy`) turns tracing on per HTTPRoute, samples every request and propagates W3C `traceparent`.
+  A route that isn't listed there isn't traced: add each new HTTPRoute to its `targetRefs`.
+- **Gateway access log.** nginx writes Compose's JSON access log (with `trace_id` and `span_id`) to stdout
+  (`nginx.config.logging.accessLog`). The agent reads it from `/var/log/pods` through a read-only hostPath, which Pod
+  Security `restricted` forbids. That's why it runs in its own `observability` namespace (Pod Security `privileged`),
+  not in `polaris`.
+- **Grafana Cloud (D8).** Optional. Put the `GRAFANA_CLOUD_*` keys of `.env.template` in the untracked
+  `deploy/k8s/.env.local` (or point `K8S_ENV_FILE` at another env file) and re-run `make k8s-up`. `platform.sh` then
+  writes the three keys to the Secret `polaris/grafana-cloud` and layers `platform/otel-collector/grafana-cloud.values.yaml`
+  (Compose's `otlp_http/grafana_cloud` exporter and `basicauth/grafana_cloud` extension) on the Collector. Without
+  them, as in CI, the Secret is removed and the Collector exports to its debug exporter only. Values are read as
+  `KEY=value` lines, without quotes.

@@ -1,0 +1,50 @@
+# Grafana Cloud export (D8), layered on values.yaml by scripts/k8s/platform.sh only when the untracked env file
+# (deploy/k8s/.env.local, the keys of .env.template) sets GRAFANA_CLOUD_OTLP_ENDPOINT, GRAFANA_CLOUD_INSTANCE_ID and
+# GRAFANA_CLOUD_API_TOKEN. platform.sh writes those three keys to the Secret `grafana-cloud` in `polaris`; the
+# Collector reads them as environment variables. Without them (CI) this file is not applied and the Collector exports
+# to the debug exporter only, so it never starts with an empty endpoint.
+#
+# The extension and exporter are the Compose ones (docker/telemetry/otel-collector-config.yaml), unchanged: every
+# pipeline also fans out to the stack's OTLP gateway, after the same redaction and allow-list processors.
+# Helm replaces lists instead of merging them, so each pipeline's `exporters` and the extension list are restated here.
+
+extraEnvsFrom:
+  - secretRef:
+      name: grafana-cloud
+
+config:
+  extensions:
+    # Grafana Cloud OTLP gateway auth: username = stack instance ID, password = Access Policy
+    # token with metrics:write, logs:write and traces:write scopes.
+    basicauth/grafana_cloud:
+      client_auth:
+        username: "${env:GRAFANA_CLOUD_INSTANCE_ID}"
+        password: "${env:GRAFANA_CLOUD_API_TOKEN}"
+
+  exporters:
+    # Grafana Cloud OTLP gateway, e.g. https://otlp-gateway-prod-<zone>.grafana.net/otlp
+    # (the exporter appends /v1/traces, /v1/metrics, /v1/logs).
+    otlp_http/grafana_cloud:
+      endpoint: "${env:GRAFANA_CLOUD_OTLP_ENDPOINT}"
+      auth:
+        authenticator: basicauth/grafana_cloud
+      timeout: 10s
+      retry_on_failure:
+        enabled: true
+        initial_interval: 5s
+        max_interval: 30s
+        max_elapsed_time: 120s
+      sending_queue:
+        enabled: true
+        num_consumers: 4
+        queue_size: 1000
+
+  service:
+    extensions: [health_check, basicauth/grafana_cloud]
+    pipelines:
+      traces:
+        exporters: [debug/detailed, otlp_http/grafana_cloud]
+      metrics:
+        exporters: [debug, otlp_http/grafana_cloud]
+      logs:
+        exporters: [debug/detailed, otlp_http/grafana_cloud]

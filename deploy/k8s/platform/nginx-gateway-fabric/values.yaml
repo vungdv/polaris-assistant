@@ -9,6 +9,27 @@ nginxGateway:
   productTelemetry:
     enable: false
 nginx:
+  # Data-plane settings (the chart renders them as the NginxProxy the GatewayClass references), K4 / TR-K9:
+  config:
+    # Spans go over OTLP/gRPC to the Collector (platform/otel-collector), batched and asynchronous: if the Collector
+    # is down, spans are dropped and requests are unaffected (as in Compose). Which routes are traced, the sampling
+    # ratio and traceparent propagation are set per HTTPRoute by the ObservabilityPolicy in base/edge.
+    # The service.name is `ngf:polaris:polaris`; the Collector renames it to Compose's `nginx-gateway`.
+    telemetry:
+      exporter:
+        endpoint: otel-collector.polaris.svc.cluster.local:4317
+        interval: 5s
+        batchSize: 512
+        batchCount: 4
+    logging:
+      # Compose's edge_json access log, to stdout, where the log agent (platform/otel-agent) collects it. It never
+      # logs the query string, Authorization, cookies or OAuth code/state (no $args, $request, $request_uri or
+      # $http_* variables). Compose's `route` and `sse` fields came from per-location `set` directives that
+      # NGINX Gateway Fabric doesn't offer, so they are left out.
+      accessLog:
+        escape: json
+        format: >-
+          {"time":"$time_iso8601","trace_id":"$otel_trace_id","span_id":"$otel_span_id","host":"$host","uri":"$uri","method":"$request_method","status":$status,"upstream_status":"$upstream_status","request_time":"$request_time","upstream_response_time":"$upstream_response_time","bytes_sent":$body_bytes_sent}
   service:
     # kind maps host ports 80/443 to these fixed NodePorts (deploy/k8s/kind/cluster.yaml), so the data plane needs
     # no hostPort, which Pod Security `restricted` forbids. A cloud overlay switches this back to LoadBalancer.

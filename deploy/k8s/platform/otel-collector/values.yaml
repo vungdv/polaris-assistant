@@ -1,0 +1,201 @@
+# Helm values for the OpenTelemetry Collector (K4, TR-K9, D8), installed by scripts/k8s/platform.sh from the upstream
+# chart ($OTEL_COLLECTOR_CHART at $OTEL_COLLECTOR_VERSION, deploy/k8s/versions.env) into the `polaris` namespace as the
+# Deployment and Service `otel-collector` (OTLP gRPC :4317, OTLP HTTP :4318). The contrib image tag is the chart's
+# appVersion, so the chart pin also pins the image.
+#
+# The pipeline is ported from docker/telemetry/otel-collector-config.yaml (Compose), with these differences:
+#   - k8s_attributes (right after memory_limiter) adds k8s.namespace.name, k8s.pod.name, k8s.deployment.name, ... to
+#     every signal. It finds the sending pod by the connection's source IP, or by k8s.pod.uid / k8s.pod.ip when the
+#     sender already set them (the log agent does). RBAC: the ClusterRole below (read pods, namespaces, replicasets).
+#   - Gateway spans come from NGINX Gateway Fabric (platform/nginx-gateway-fabric), whose service.name is
+#     `ngf:<namespace>:<gateway>`; transform/nginx_resource renames it to `nginx-gateway`, the Compose name, so the
+#     Compose processors, dashboards and SLO rules apply unchanged.
+#   - The nginx syslog receiver is replaced by the log agent (platform/otel-agent), which tails the Gateway pod's stdout
+#     and forwards the parsed JSON access log here over OTLP; it lands in the `logs` pipeline and is redacted there.
+#     The nginx stub_status receiver has no NGINX Gateway Fabric equivalent and is not ported.
+#   - The local Tempo, Loki and Prometheus exporters move to K12 (D8) with those backends.
+#   - The `debug` exporter writes every span and log record (resource attributes included) to the Collector's stdout,
+#     which the smoke test reads. Metrics are only counted there.
+#   - Grafana Cloud: the otlp_http/grafana_cloud exporter and its basicauth extension are kept as in Compose, in
+#     grafana-cloud.values.yaml. platform.sh layers that file on top of this one only when the env file has the
+#     GRAFANA_CLOUD_* credentials, so a cluster without them (CI) runs the same pipeline with the debug exporter only.
+# Every pipeline keeps the Compose hardening: memory_limiter first, redaction before batch and export, bounded
+# exporter queues.
+
+mode: deployment
+replicaCount: 1
+fullnameOverride: otel-collector
+
+image:
+  repository: otel/opentelemetry-collector-contrib
+
+# Pod Security `restricted` (TR-K10): the namespace enforces it. The contrib image runs as UID 10001.
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  seccompProfile:
+    type: RuntimeDefault
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+
+# GOMEMLIMIT follows the memory limit (useGOMEMLIMIT); memory_limiter refuses data above its share of it.
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    memory: 512Mi
+
+# OTLP only: the chart's Jaeger and Zipkin ports are off.
+ports:
+  otlp:
+    enabled: true
+  otlp-http:
+    enabled: true
+  jaeger-compact:
+    enabled: false
+  jaeger-thrift:
+    enabled: false
+  jaeger-grpc:
+    enabled: false
+  zipkin:
+    enabled: false
+
+# k8s_attributes watches pods and namespaces, and replicasets to resolve k8s.deployment.name.
+clusterRole:
+  create: true
+  rules:
+    - apiGroups: [""]
+      resources: ["pods", "namespaces"]
+      verbs: ["get", "watch", "list"]
+    - apiGroups: ["apps"]
+      resources: ["replicasets"]
+      verbs: ["get", "watch", "list"]
+
+config:
+  # The chart's default Jaeger, Zipkin and self-scrape receivers are removed (null deletes a chart default).
+  receivers:
+    jaeger: null
+    zipkin: null
+    prometheus: null
+    otlp:
+      protocols:
+        grpc:
+          endpoint: ${env:MY_POD_IP}:4317
+        http:
+          endpoint: ${env:MY_POD_IP}:4318
+
+  processors:
+    memory_limiter:
+      check_interval: 1s
+      limit_percentage: 30
+      spike_limit_percentage: 6
+    k8s_attributes:
+      auth_type: serviceAccount
+      passthrough: false
+      pod_association:
+        - sources:
+            - from: resource_attribute
+              name: k8s.pod.uid
+        - sources:
+            - from: resource_attribute
+              name: k8s.pod.ip
+        - sources:
+            - from: connection
+      extract:
+        metadata:
+          - k8s.namespace.name
+          - k8s.pod.name
+          - k8s.pod.uid
+          - k8s.node.name
+          - k8s.deployment.name
+          - k8s.replicaset.name
+          - k8s.statefulset.name
+          - k8s.daemonset.name
+    # NGINX Gateway Fabric names its tracing service `ngf:<namespace>:<gateway>`; use the Compose name.
+    transform/nginx_resource:
+      error_mode: ignore
+      trace_statements:
+        - context: resource
+          statements:
+            - set(resource.attributes["service.name"], "nginx-gateway") where IsMatch(resource.attributes["service.name"], "^ngf:")
+    # ngx_otel_module always records http.target WITH the raw query string (OAuth code/state). Remove every copy on
+    # gateway spans.
+    transform/nginx_spans:
+      error_mode: ignore
+      trace_statements:
+        - context: span
+          conditions:
+            - resource.attributes["service.name"] == "nginx-gateway"
+          statements:
+            - delete_matching_keys(span.attributes, "^http\\.target$")
+            - delete_matching_keys(span.attributes, "^url\\.query$")
+    # ---- Redaction (as in Compose). Regexes are RE2; single-quoted YAML keeps backslashes literal. ----
+    redaction/secrets:
+      allow_all_keys: true
+      summary: silent
+      blocked_key_patterns:
+        - '(?i).*(authorization|cookie|passw(or)?d|passwd|secret|api[-_.]?key|credential|access[-_.]?token|refresh[-_.]?token|id[-_.]?token|session[-_.]?id).*'
+        - '(?i)(^|.*[._-])token$'
+      blocked_values:
+        - '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}'            # email
+        - '\b(?:\d{4}[ -]){3}\d{1,4}\b'                                # card, grouped
+        - '\b[3-6]\d{12,15}\b'                                          # card, contiguous 13-16 digits
+        - '(?i)\b(bearer|basic)\s+[A-Za-z0-9._~+/=-]{8,}'               # Authorization header values
+        - 'eyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]*'      # JWT
+    transform/redact_logs:
+      error_mode: ignore
+      log_statements:
+        - context: log
+          statements:
+            - 'replace_pattern(log.body, "(?i)\"?(authorization|proxy-authorization|cookie|set-cookie|password|secret|api[-_]?key|access_token|refresh_token|id_token|token)\"?\\s*[:=]\\s*\"?[^\",;&\\s}]+(\\s+[A-Za-z0-9._~+/=-]{8,})?", "$$1=***") where IsString(log.body)'
+            - 'replace_pattern(log.body, "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}", "***") where IsString(log.body)'
+            - 'replace_pattern(log.body, "\\b(?:\\d{4}[ -]){3}\\d{1,4}\\b", "***") where IsString(log.body)'
+            - 'replace_pattern(log.body, "\\b[3-6]\\d{12,15}\\b", "***") where IsString(log.body)'
+            - 'replace_pattern(log.body, "(?i)\\b(bearer|basic)\\s+[A-Za-z0-9._~+/=-]{8,}", "***") where IsString(log.body)'
+            - 'replace_pattern(log.body, "eyJ[A-Za-z0-9_-]{5,}\\.[A-Za-z0-9_-]{5,}\\.[A-Za-z0-9_-]*", "***") where IsString(log.body)'
+    transform/redact_traces:
+      error_mode: ignore
+      trace_statements:
+        - context: span
+          statements:
+            - 'replace_pattern(span.name, "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}", "***")'
+            - 'replace_pattern(span.status.message, "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}", "***")'
+            - 'replace_pattern(span.status.message, "(?i)\\b(bearer|basic)\\s+[A-Za-z0-9._~+/=-]{8,}", "***")'
+    # Cardinality guardrail (as in Compose): metric data points keep ONLY these attribute key families. The k8s.*
+    # resource attributes are on the resource, not the data points, so they are unaffected.
+    transform/metric_allowlist:
+      error_mode: ignore
+      metric_statements:
+        - context: datapoint
+          statements:
+            - 'delete_matching_keys(datapoint.attributes, "(?i)(authorization|cookie|passw|secret|token$|credential|api[-_.]?key|\\.header\\.)")'
+            - 'keep_matching_keys(datapoint.attributes, "^(http|url|server|error|exception|jvm|db|messaging|system|process|kafka|spring|authentication|net|network|rpc|state|area|id|pool|name|gc|cause|action|outcome|status|method|uri|result|level|topic|partition|client|node|type|path|version|vendor|runtime|compiler|main|listener|cache|scope|service|deployment|host|le|quantile|event|group|destination|gen_ai|intent)([._].*)?$")'
+    batch:
+      timeout: 2s
+      send_batch_max_size: 8192
+
+  exporters:
+    # The chart's default `debug` exporter (basic verbosity: counts only) serves metrics.
+    debug: {}
+    debug/detailed:
+      verbosity: detailed
+
+  service:
+    pipelines:
+      traces:
+        receivers: [otlp]
+        processors: [memory_limiter, k8s_attributes, transform/nginx_resource, transform/nginx_spans, redaction/secrets, transform/redact_traces, batch]
+        exporters: [debug/detailed]
+      metrics:
+        receivers: [otlp]
+        processors: [memory_limiter, k8s_attributes, redaction/secrets, transform/metric_allowlist, batch]
+        exporters: [debug]
+      logs:
+        receivers: [otlp]
+        processors: [memory_limiter, k8s_attributes, redaction/secrets, transform/redact_logs, batch]
+        exporters: [debug/detailed]

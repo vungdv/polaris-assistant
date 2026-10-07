@@ -22,7 +22,15 @@ KUBE_CONTEXT="kind-$KIND_CLUSTER_NAME"
   GATEWAY_SERVICE="$GATEWAY_NAME-nginx"
   CA_BUNDLE=polaris-ca-bundle
   EDGE_HOSTS=(polaris.local id.polaris.local grafana.polaris.local)
+  # Observability (K4): the Collector (Deployment and Service) in the app namespace, the log agent (DaemonSet) in its
+  # own namespace (platform/otel-agent).
+  OTEL_COLLECTOR=otel-collector
+  OTEL_AGENT=otel-agent
+  OTEL_AGENT_NAMESPACE=observability
 }
+# Untracked env file with the keys of .env.template (TR-K3): the source of the cluster's Secrets. Optional so far: K4
+# reads only the GRAFANA_CLOUD_* keys from it.
+K8S_ENV_FILE="${K8S_ENV_FILE:-$K8S_DIR/.env.local}"
 # Upper bound for each Helm install or readiness wait, so a stuck component fails the run instead of hanging it.
 K8S_WAIT_TIMEOUT="${K8S_WAIT_TIMEOUT:-300s}"
 
