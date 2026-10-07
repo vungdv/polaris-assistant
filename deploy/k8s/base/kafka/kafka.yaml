@@ -17,8 +17,8 @@ metadata:
     app.kubernetes.io/part-of: polaris
 spec:
   kafka:
-    # The newest Kafka that the pinned Strimzi runs (deploy/k8s/versions.env); Compose runs 3.9.1, which Strimzi no
-    # longer supports. The metadata version follows this version's default.
+    # The newest Kafka that the pinned Strimzi runs (deploy/k8s/versions.env), as Compose runs. Strimzi 0.49 no
+    # longer supports 3.9. The metadata version follows this version's default.
     version: 4.1.1
     listeners:
       # Compose's INTERNAL listener: plaintext, unauthenticated, in-cluster only (TR-X1 allows it in dev). Compose's

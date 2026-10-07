@@ -39,7 +39,7 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 class ConsumerGroupMetricsKafkaIntegrationTest {
 
     @Container
-    static final KafkaContainer kafka = new KafkaContainer("apache/kafka:3.9.1");
+    static final KafkaContainer kafka = new KafkaContainer("apache/kafka:4.1.1");
 
     @Test
     void groupLagAgeAndSkipped_arePublishedPerGroup() throws Exception {

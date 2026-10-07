@@ -1,6 +1,7 @@
 # Shared by the three Kafka nodes (kafka-1..3); each node adds its id, listeners, host port and volume.
 x-kafka-node: &kafka-node
-  image: apache/kafka:3.9.1
+  # Kafka 4.1.1, as the Kubernetes cluster runs (deploy/k8s/base/kafka/kafka.yaml). Pinned by tag and digest.
+  image: apache/kafka:4.1.1@sha256:0bc1bb2478f45b6cea78864df86acdc11e8df2c5172477819a4d12942cbe5d40
   networks:
     - polaris-net
 x-kafka-env: &kafka-env

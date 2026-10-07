@@ -77,7 +77,7 @@ import vn.danang.polaris.outbox.transport.EventTransport;
 @DirtiesContext
 class KafkaEventTransportIntegrationTest {
 
-    static final String KAFKA_IMAGE = "apache/kafka:3.9.1";
+    static final String KAFKA_IMAGE = "apache/kafka:4.1.1";
     static final String TOPIC = "polaris.test.lifecycle";
     static final String TYPE = "vn.danang.polaris.test.thing.happened.v1";
     static final String SOURCE = "/polaris/test";
