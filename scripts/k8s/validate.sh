@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Renders every overlay and every platform kustomization (deploy/k8s/platform/*/) with `kubectl kustomize` and
 # validates the output with kubeconform in strict mode, against the schemas of the pinned Kubernetes version plus the
-# pinned CRDs catalog for custom resources (cert-manager, trust-manager, Gateway API, NGINX Gateway Fabric).
+# pinned CRDs catalog for custom resources (cert-manager, trust-manager, Gateway API, NGINX Gateway Fabric, CloudNativePG).
 # The Helm values of each platform component are rendered against their pinned chart. Needs no cluster.
 set -euo pipefail
 # shellcheck source=SCRIPTDIR/lib.sh
@@ -44,3 +44,4 @@ render_chart "$OTEL_COLLECTOR_CHART" "$OTEL_COLLECTOR_VERSION" "$K8S_DIR/platfor
 render_chart "$OTEL_COLLECTOR_CHART" "$OTEL_COLLECTOR_VERSION" "$K8S_DIR/platform/otel-collector/values.yaml" \
   "$K8S_DIR/platform/otel-collector/grafana-cloud.values.yaml"
 render_chart "$OTEL_COLLECTOR_CHART" "$OTEL_COLLECTOR_VERSION" "$K8S_DIR/platform/otel-agent/values.yaml"
+render_chart "$CNPG_CHART" "$CNPG_VERSION" "$K8S_DIR/platform/cloudnative-pg/values.yaml"

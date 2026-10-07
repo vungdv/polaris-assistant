@@ -1,0 +1,30 @@
+# PostgreSQL for the identity context (K5, D2, TR-K6): Compose's `postgres` service (container keycloak-postgres,
+# postgres:16, database and owner `keycloak`). Keycloak connects to it in K7. CloudNativePG generates the owner's
+# credentials as the Secret `keycloak-db-app` and serves the primary on the Service `keycloak-db-rw`.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: keycloak-db
+  labels:
+    app.kubernetes.io/name: keycloak-db
+    app.kubernetes.io/part-of: polaris
+spec:
+  # Three instances (primary plus two streaming replicas) for failover; overlays/local runs one.
+  instances: 3
+  # Same image and locale as polaris-db (see polaris-db.yaml).
+  imageName: ghcr.io/cloudnative-pg/postgresql:16.15-standard-trixie@sha256:34c186731c221d8a788ac3758240653743a4f6237c52a6a2d6de29c6e1d1b834
+  bootstrap:
+    initdb:
+      database: keycloak
+      owner: keycloak
+      encoding: UTF8
+      localeCollate: en_US.utf8
+      localeCType: en_US.utf8
+  storage:
+    size: 1Gi
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 1Gi

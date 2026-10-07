@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Creates the local kind cluster (if it doesn't exist yet), installs the platform components (platform.sh) and
-# applies the local overlay, then waits for the edge to be ready. Safe to re-run.
+# applies the local overlay, then waits for the edge and the data stores to be ready. Safe to re-run.
 set -euo pipefail
 # shellcheck source=SCRIPTDIR/lib.sh
 source "$(dirname "$0")/lib.sh"
@@ -22,7 +22,9 @@ fi
 
 write_image_pins
 log "applying ${K8S_OVERLAY#"$REPO_ROOT"/} (app images pinned to $IMAGE_TAG)"
-kctl apply -k "$K8S_OVERLAY"
+# CloudNativePG's admission webhooks can refuse the Clusters for a few seconds after the operator is Ready, until its
+# self-generated serving certificate is in the webhook configurations.
+retry 6 kctl apply -k "$K8S_OVERLAY"
 kctl wait --for=jsonpath='{.status.phase}'=Active "namespace/$K8S_NAMESPACE" --timeout=60s >/dev/null
 
 # Edge (K3): the certificate is issued, the Gateway is programmed with a running data plane, and the trust bundle
@@ -33,4 +35,13 @@ kctl -n "$K8S_NAMESPACE" wait --for=condition=Programmed "gateway/$GATEWAY_NAME"
 kctl -n "$K8S_NAMESPACE" rollout status "deployment/$GATEWAY_SERVICE" --timeout="$K8S_WAIT_TIMEOUT" >/dev/null
 kctl wait --for=condition=Synced "bundle/$CA_BUNDLE" --timeout="$K8S_WAIT_TIMEOUT" >/dev/null
 kctl -n "$K8S_NAMESPACE" wait --for=create "configmap/$CA_BUNDLE" --timeout=60s >/dev/null
+
+# Data stores (K5): every PostgreSQL Cluster has its instances ready (initdb included on the first run) and Redis is
+# available.
+log "waiting for the PostgreSQL clusters (${PG_CLUSTERS[*]}) and Redis"
+for cluster in "${PG_CLUSTERS[@]}"; do
+  kctl -n "$K8S_NAMESPACE" wait --for=condition=Ready "cluster.postgresql.cnpg.io/$cluster" \
+    --timeout="$K8S_WAIT_TIMEOUT" >/dev/null
+done
+kctl -n "$K8S_NAMESPACE" rollout status "deployment/$REDIS" --timeout="$K8S_WAIT_TIMEOUT" >/dev/null
 log "cluster '$KIND_CLUSTER_NAME' is up (context $KUBE_CONTEXT)"
