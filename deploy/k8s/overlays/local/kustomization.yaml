@@ -1,6 +1,10 @@
-# Local kind environment (`make k8s-up`). Later slices add image tags, replica counts and a
-# secretGenerator from the untracked deploy/k8s/.env.local here.
+# Local kind environment (`make k8s-up`). Later slices add replica counts and a secretGenerator from the untracked
+# deploy/k8s/.env.local here.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - ../../base
+components:
+  # App image pins: ghcr.io/<owner>/<app>:<git-sha> (TR-K2). Generated and untracked: scripts/k8s/up.sh,
+  # validate.sh and images.sh write it from the git HEAD (write_image_pins in scripts/k8s/lib.sh).
+  - images

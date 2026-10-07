@@ -1,4 +1,4 @@
-.PHONY: seed-shoppers chat-scenarios pull build up up-dev-ports down validate-docs setup-hooks render-bpmn test test-rules test-perf test-concurrency e2e-fulfilment e2e-fulfilment gcx gcx-exec status playwright-ui playwright-close run run-assistant run-fulfilment verify-fulfilment-image clean polaris-sql kafka-topics kafka-tail kafka-cluster kafka-offsets kafka-groups kafka-leaders k8s-tools k8s-validate k8s-up k8s-down k8s-smoke
+.PHONY: seed-shoppers chat-scenarios pull build up up-dev-ports down validate-docs setup-hooks render-bpmn test test-rules test-perf test-concurrency e2e-fulfilment e2e-fulfilment gcx gcx-exec status playwright-ui playwright-close run run-assistant run-fulfilment verify-fulfilment-image clean polaris-sql kafka-topics kafka-tail kafka-cluster kafka-offsets kafka-groups kafka-leaders k8s-tools k8s-validate k8s-up k8s-down k8s-smoke k8s-images
 
 run:
 	mvn spring-boot:run -pl apps/polaris
@@ -106,4 +106,7 @@ k8s-down:
 	./scripts/k8s/down.sh
 k8s-smoke:
 	./scripts/k8s/smoke.sh
+# Builds the app images tagged with the git SHA and loads them into the kind cluster (APPS="polaris ..." for a subset)
+k8s-images:
+	./scripts/k8s/images.sh $(APPS)
 

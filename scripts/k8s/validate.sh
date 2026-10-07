@@ -11,6 +11,7 @@ ensure_tools kubectl kubeconform
 k8s_schemas="https://raw.githubusercontent.com/yannh/kubernetes-json-schema/$K8S_SCHEMAS_REF/{{.NormalizedKubernetesVersion}}-standalone{{.StrictSuffix}}/{{.ResourceKind}}{{.KindSuffix}}.json"
 crds_catalog="https://raw.githubusercontent.com/datreeio/CRDs-catalog/$CRDS_CATALOG_REF/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json"
 
+write_image_pins
 for overlay in "$K8S_DIR"/overlays/*/; do
   log "validating ${overlay#"$REPO_ROOT"/}"
   kubectl kustomize "$overlay" |
