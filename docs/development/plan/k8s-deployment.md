@@ -94,8 +94,8 @@ Slices run top to bottom; only the `execute-plan` coordinator edits this table.
 | # | Slice | Title | Status | External | Branch | PR | Notes |
 |:--|:--|:--|:--|:--|:--|:--|:--|
 | 1 | K1 | Cluster bootstrap, layout and CI skeleton | `done` | Decisions D1–D10 confirmed | `k8s/k1-cluster-bootstrap` | [#2](https://github.com/vungdv/polaris-assistant/pull/2) | Merged 396851f |
-| 2 | K2 | Application images in CI | `done` | GHCR package write permission on the repo | `k8s/k2-app-images` | [#3](https://github.com/vungdv/polaris-assistant/pull/3) | Merged de719a9. Trunk Maven red on pre-existing flaky tests (ProductCacheIntegrationTest, OutboxRelayWorkerIntegrationTest); run stopped before K3 |
-| 3 | K3 | Edge: TLS, Gateway and DNS | `todo` | — | | | |
+| 2 | K2 | Application images in CI | `done` | GHCR package write permission on the repo | `k8s/k2-app-images` | [#3](https://github.com/vungdv/polaris-assistant/pull/3) | Merged de719a9. Flaky trunk tests fixed in #4 (0db2cf1) |
+| 3 | K3 | Edge: TLS, Gateway and DNS | `in-progress` | — | | | |
 | 4 | K4 | Observability pipeline | `todo` | Grafana Cloud OTLP credentials available to CI as secrets | | | |
 | 5 | K5 | Data stores: PostgreSQL and Redis | `todo` | — | | | |
 | 6 | K6 | Kafka cluster | `todo` | — | | | |
