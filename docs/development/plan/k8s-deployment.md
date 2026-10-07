@@ -94,7 +94,7 @@ Slices run top to bottom; only the `execute-plan` coordinator edits this table.
 | # | Slice | Title | Status | External | Branch | PR | Notes |
 |:--|:--|:--|:--|:--|:--|:--|:--|
 | 1 | K1 | Cluster bootstrap, layout and CI skeleton | `done` | Decisions D1–D10 confirmed | `k8s/k1-cluster-bootstrap` | [#2](https://github.com/vungdv/polaris-assistant/pull/2) | Merged 396851f |
-| 2 | K2 | Application images in CI | `todo` | GHCR package write permission on the repo | | | |
+| 2 | K2 | Application images in CI | `in-progress` | GHCR package write permission on the repo | | | |
 | 3 | K3 | Edge: TLS, Gateway and DNS | `todo` | — | | | |
 | 4 | K4 | Observability pipeline | `todo` | Grafana Cloud OTLP credentials available to CI as secrets | | | |
 | 5 | K5 | Data stores: PostgreSQL and Redis | `todo` | — | | | |
