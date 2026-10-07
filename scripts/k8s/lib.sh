@@ -40,6 +40,21 @@ ensure_tools() { "$REPO_ROOT/scripts/k8s/tools.sh" "$@"; }
 
 kctl() { kubectl --context "$KUBE_CONTEXT" "$@"; }
 
+# retry <attempts> <command...>: runs the command until it succeeds, with exponential backoff (2s, 4s, 8s, ...).
+# For calls that race a component's readiness, such as an admission webhook whose Pod is Ready before its serving
+# certificate is injected.
+retry() {
+  local attempts="$1" delay=2 n=1
+  shift
+  until "$@"; do
+    [ "$n" -lt "$attempts" ] || return 1
+    log "attempt $n/$attempts failed, retrying in ${delay}s: $*"
+    sleep "$delay"
+    n=$((n + 1))
+    delay=$((delay * 2))
+  done
+}
+
 sha256() {
   if command -v sha256sum >/dev/null; then sha256sum "$1" | cut -d' ' -f1; else shasum -a 256 "$1" | cut -d' ' -f1; fi
 }

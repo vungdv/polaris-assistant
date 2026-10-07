@@ -37,7 +37,9 @@ install_gateway_api_crds() {
 
 install_pki() {
   log "applying the cluster PKI (root CA, CA ClusterIssuer, trust Bundle)"
-  kctl apply -k "$PLATFORM_DIR/pki"
+  # trust-manager's validating webhook can refuse the Bundle for a few seconds after its Pod is Ready, until
+  # cert-manager's cainjector has written the webhook's CA bundle.
+  retry 6 kctl apply -k "$PLATFORM_DIR/pki"
   kctl -n cert-manager wait --for=condition=Ready certificate/polaris-root-ca --timeout="$K8S_WAIT_TIMEOUT" >/dev/null
   kctl wait --for=condition=Ready clusterissuer/polaris-ca --timeout="$K8S_WAIT_TIMEOUT" >/dev/null
 }
