@@ -1,0 +1,14 @@
+# Helm values for trust-manager (K3, D6), installed by scripts/k8s/up.sh from the upstream chart
+# ($TRUST_MANAGER_CHART at $TRUST_MANAGER_VERSION, deploy/k8s/versions.env) into the `cert-manager` namespace.
+crds:
+  enabled: true
+  keep: true
+app:
+  trust:
+    # Bundle sources are read from this namespace only. The root CA Secret (platform/pki) lives here because the
+    # CA ClusterIssuer reads it from cert-manager's cluster resource namespace, which is also `cert-manager`.
+    namespace: cert-manager
+# The default CA package (Debian's public roots) backs `useDefaultCAs` in the Bundle, so the JKS trust store holds
+# the public roots plus the cluster root CA, as Compose's docker/nginx/truststore.jks does (JDK cacerts + mkcert root).
+defaultPackage:
+  enabled: true

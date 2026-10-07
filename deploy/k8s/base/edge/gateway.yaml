@@ -1,0 +1,51 @@
+# The north-south entrypoint (TR-K7, D5). NGINX Gateway Fabric provisions its data plane in this namespace as the
+# Deployment and Service `polaris-nginx`; CoreDNS resolves *.polaris.local to that Service inside the cluster (D7).
+# Each public host has its own HTTPS listener, so a later HTTPRoute attaches to exactly one host with `sectionName`.
+# Plain HTTP on port 80 only redirects to HTTPS (http-redirect.yaml).
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: polaris
+  namespace: polaris
+spec:
+  gatewayClassName: nginx
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 80
+      allowedRoutes:
+        namespaces:
+          from: Same
+    - name: https-polaris
+      hostname: polaris.local
+      protocol: HTTPS
+      port: 443
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - name: polaris-edge-tls
+      allowedRoutes:
+        namespaces:
+          from: Same
+    - name: https-id
+      hostname: id.polaris.local
+      protocol: HTTPS
+      port: 443
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - name: polaris-edge-tls
+      allowedRoutes:
+        namespaces:
+          from: Same
+    - name: https-grafana
+      hostname: grafana.polaris.local
+      protocol: HTTPS
+      port: 443
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - name: polaris-edge-tls
+      allowedRoutes:
+        namespaces:
+          from: Same

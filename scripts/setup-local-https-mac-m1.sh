@@ -9,7 +9,8 @@
 # Safe to re-run — all steps are idempotent.
 #
 # Usage:
-#   ./setup-local-https.sh
+#   ./setup-local-https.sh          # Compose: mkcert certificates and JVM trust store
+#   ./setup-local-https.sh --k8s    # also trust the kind cluster's root CA (make k8s-up) on this Mac
 #
 set -euo pipefail
 
@@ -87,6 +88,52 @@ ensure_hosts_entries() {
     } | sudo tee -a "$HOSTS_FILE" > /dev/null
     ok "Hosts file updated."
   fi
+}
+
+# ---- Step 3b (opt-in, --k8s): trust the kind cluster's root CA ---------------
+# The kind cluster (make k8s-up) signs its edge certificate with its own root CA (cert-manager,
+# deploy/k8s/platform/pki), not with mkcert. This adds that root CA to the System keychain, so browsers and curl
+# trust https://polaris.local served by the cluster, and removes the roots of earlier clusters (each new cluster has
+# a new CA). Skips with a warning when no cluster is running. Never touches the mkcert CA or the Compose certs.
+K8S_CA_NAME="Polaris Local Root CA"
+SYSTEM_KEYCHAIN="/Library/Keychains/System.keychain"
+
+trust_k8s_root_ca() {
+  local repo_root kubectl_bin context ca_file fingerprint stale
+  repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+  kubectl_bin="${repo_root}/.tools/bin/kubectl"
+  [[ -x "$kubectl_bin" ]] || kubectl_bin="$(command -v kubectl || true)"
+  context="kind-${KIND_CLUSTER_NAME:-polaris}"
+
+  if [[ -z "$kubectl_bin" ]]; then
+    warn "kubectl not found (run 'make k8s-up' first). Skipping the cluster root CA."
+    return
+  fi
+  ca_file="$(mktemp)"
+  if ! "$kubectl_bin" --context "$context" --request-timeout=10s -n cert-manager \
+      get secret polaris-root-ca -o jsonpath='{.data.tls\.crt}' 2>/dev/null | base64 -d >"$ca_file" ||
+      ! openssl x509 -in "$ca_file" -noout 2>/dev/null; then
+    warn "No running kind cluster with a root CA (context ${context}). Run 'make k8s-up', then re-run with --k8s."
+    rm -f "$ca_file"
+    return
+  fi
+
+  fingerprint="$(openssl x509 -in "$ca_file" -noout -fingerprint -sha1 | cut -d= -f2 | tr -d :)"
+  for stale in $(security find-certificate -a -Z -c "$K8S_CA_NAME" "$SYSTEM_KEYCHAIN" 2>/dev/null |
+    awk '/^SHA-1 hash:/ { print $3 }'); do
+    if [[ "$stale" == "$fingerprint" ]]; then
+      ok "Cluster root CA (${fingerprint}) already trusted."
+      rm -f "$ca_file"
+      return
+    fi
+    log "Removing the root CA of an earlier cluster (${stale}) from the System keychain (requires sudo)..."
+    sudo security delete-certificate -Z "$stale" "$SYSTEM_KEYCHAIN"
+  done
+
+  log "Trusting the cluster root CA (${fingerprint}) in the System keychain (requires sudo)..."
+  sudo security add-trusted-cert -d -r trustRoot -k "$SYSTEM_KEYCHAIN" "$ca_file"
+  rm -f "$ca_file"
+  ok "Cluster root CA trusted: https://polaris.local served by kind verifies without warnings."
 }
 
 # ---- Step 4: Generate certs -------------------------------------------------
@@ -188,10 +235,23 @@ ok "JVM trust store generated: ${truststore}"
 
 # ---- Main -------------------------------------------------------------------
 main() {
+  local trust_k8s=false
+  case "${1:-}" in
+    "") ;;
+    --k8s) trust_k8s=true ;;
+    *)
+      err "Unknown argument: $1 (usage: $0 [--k8s])"
+      exit 2
+      ;;
+  esac
+
   require_macos
   ensure_homebrew
   ensure_mkcert
   ensure_hosts_entries
+  if [[ "$trust_k8s" == true ]]; then
+    trust_k8s_root_ca
+  fi
   generate_certs
   export_ca_root
   build_jvm_truststore

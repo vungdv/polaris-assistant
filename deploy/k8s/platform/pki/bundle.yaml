@@ -1,0 +1,28 @@
+# The trust store apps mount (TR-K8): trust-manager writes a ConfigMap `polaris-ca-bundle` into every namespace
+# labelled app.kubernetes.io/part-of=polaris, with
+#   ca.crt          PEM: the public roots plus the cluster root CA
+#   truststore.jks  JKS, password `changeit` (the JDK default): the same certificates
+# It replaces docker/nginx/truststore.jks (JDK cacerts + the mkcert root, password changeit) with the same semantics,
+# so apps keep JAVA_TOOL_OPTIONS=-Djavax.net.ssl.trustStore=<mount>/truststore.jks. A trust store holds only public
+# certificates and its password guards integrity, not secrecy, so it is not a credential (TR-K3).
+apiVersion: trust.cert-manager.io/v1alpha1
+kind: Bundle
+metadata:
+  name: polaris-ca-bundle
+spec:
+  sources:
+    # Public roots, for calls to external HTTPS APIs (Gemini, TypeSafe, Grafana Cloud).
+    - useDefaultCAs: true
+    - secret:
+        name: polaris-root-ca
+        key: tls.crt
+  target:
+    configMap:
+      key: ca.crt
+    additionalFormats:
+      jks:
+        key: truststore.jks
+        password: changeit
+    namespaceSelector:
+      matchLabels:
+        app.kubernetes.io/part-of: polaris

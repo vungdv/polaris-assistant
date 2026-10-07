@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Installs the pinned versions (deploy/k8s/versions.env) of kind, kubectl and kubeconform into .tools/bin,
+# Installs the pinned versions (deploy/k8s/versions.env) of kind, kubectl, kubeconform and helm into .tools/bin,
 # verifying each download against its upstream SHA-256. Re-running is a no-op when the version already matches.
-# Usage: scripts/k8s/tools.sh [kind] [kubectl] [kubeconform]   (no argument = all)
+# Usage: scripts/k8s/tools.sh [kind] [kubectl] [kubeconform] [helm]   (no argument = all)
 set -euo pipefail
 # shellcheck source=SCRIPTDIR/lib.sh
 source "$(dirname "$0")/lib.sh"
@@ -16,10 +16,6 @@ case "$(uname -m)" in
   arm64 | aarch64) arch=arm64 ;;
   *) die "unsupported architecture $(uname -m)" ;;
 esac
-
-sha256() {
-  if command -v sha256sum >/dev/null; then sha256sum "$1" | cut -d' ' -f1; else shasum -a 256 "$1" | cut -d' ' -f1; fi
-}
 
 # verify <file> <expected-sha256>
 verify() {
@@ -65,13 +61,23 @@ install_kubeconform() {
   place kubeconform "$KUBECONFORM_VERSION" "$tmp/kubeconform"
 }
 
-[ "$#" -gt 0 ] || set -- kind kubectl kubeconform
+install_helm() {
+  installed helm "$HELM_VERSION" && return
+  local file="helm-$HELM_VERSION-$os-$arch.tar.gz"
+  local url="https://get.helm.sh/$file"
+  curl -fsSLo "$tmp/$file" "$url"
+  verify "$tmp/$file" "$(curl -fsSL "$url.sha256sum" | cut -d' ' -f1)"
+  tar -xzf "$tmp/$file" -C "$tmp" "$os-$arch/helm"
+  place helm "$HELM_VERSION" "$tmp/$os-$arch/helm"
+}
+
+[ "$#" -gt 0 ] || set -- kind kubectl kubeconform helm
 mkdir -p "$TOOLS_BIN"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 for tool in "$@"; do
   case "$tool" in
-    kind | kubectl | kubeconform) "install_$tool" ;;
+    kind | kubectl | kubeconform | helm) "install_$tool" ;;
     *) die "unknown tool $tool" ;;
   esac
 done

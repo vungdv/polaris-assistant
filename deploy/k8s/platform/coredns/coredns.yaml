@@ -1,0 +1,41 @@
+# In-cluster resolution of the public hosts (K3, D7): CoreDNS answers polaris.local and *.polaris.local with the
+# Gateway data-plane Service, so pods reach https://id.polaris.local through the Gateway, as browsers do, and tokens
+# carry one issuer (TR-K8). Same role as the nginx network alias on Compose's polaris-net.
+#
+# This is the whole Corefile of the kind node image's CoreDNS (deploy/k8s/versions.env) plus the `rewrite` block.
+# scripts/k8s/up.sh applies it server-side and restarts CoreDNS only when it changed. Re-check the rest of the
+# Corefile against `kubectl -n kube-system get configmap coredns` of a fresh cluster when bumping KIND_NODE_IMAGE.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: coredns
+  namespace: kube-system
+data:
+  Corefile: |
+    .:53 {
+        errors
+        health {
+           lameduck 5s
+        }
+        ready
+        rewrite stop {
+           name regex ^(.*\.)?polaris\.local\.$ polaris-nginx.polaris.svc.cluster.local.
+           answer auto
+        }
+        kubernetes cluster.local in-addr.arpa ip6.arpa {
+           pods insecure
+           fallthrough in-addr.arpa ip6.arpa
+           ttl 30
+        }
+        prometheus :9153
+        forward . /etc/resolv.conf {
+           max_concurrent 1000
+        }
+        cache 30 {
+           disable success cluster.local
+           disable denial cluster.local
+        }
+        loop
+        reload
+        loadbalance
+    }

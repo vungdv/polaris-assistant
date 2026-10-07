@@ -1,0 +1,8 @@
+# Cluster PKI (K3, D6): a self-signed root CA, the CA ClusterIssuer that signs workload certificates with it, and
+# the trust-manager Bundle that publishes the root CA to app namespaces as PEM and JKS.
+# Applied by scripts/k8s/up.sh once cert-manager and trust-manager are ready; validated by scripts/k8s/validate.sh.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - root-ca.yaml
+  - bundle.yaml

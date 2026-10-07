@@ -13,6 +13,19 @@ K8S_OVERLAY="${K8S_OVERLAY:-$K8S_DIR/overlays/local}"
 K8S_NAMESPACE="${K8S_NAMESPACE:-polaris}"
 KUBE_CONTEXT="kind-$KIND_CLUSTER_NAME"
 
+# Edge (K3): third-party components from deploy/k8s/platform, and the Gateway in base/edge. NGINX Gateway Fabric
+# names the data-plane Service <gateway>-<gatewayclass>; platform/coredns rewrites *.polaris.local to it.
+# shellcheck disable=SC2034 # used by the scripts that source this file
+{
+  PLATFORM_DIR="$K8S_DIR/platform"
+  GATEWAY_NAME=polaris
+  GATEWAY_SERVICE="$GATEWAY_NAME-nginx"
+  CA_BUNDLE=polaris-ca-bundle
+  EDGE_HOSTS=(polaris.local id.polaris.local grafana.polaris.local)
+}
+# Upper bound for each Helm install or readiness wait, so a stuck component fails the run instead of hanging it.
+K8S_WAIT_TIMEOUT="${K8S_WAIT_TIMEOUT:-300s}"
+
 # Pinned tools are installed here by scripts/k8s/tools.sh and take precedence over anything on PATH.
 TOOLS_BIN="${TOOLS_BIN:-$REPO_ROOT/.tools/bin}"
 export PATH="$TOOLS_BIN:$PATH"
@@ -26,6 +39,25 @@ die() {
 ensure_tools() { "$REPO_ROOT/scripts/k8s/tools.sh" "$@"; }
 
 kctl() { kubectl --context "$KUBE_CONTEXT" "$@"; }
+
+# retry <attempts> <command...>: runs the command until it succeeds, with exponential backoff (2s, 4s, 8s, ...).
+# For calls that race a component's readiness, such as an admission webhook whose Pod is Ready before its serving
+# certificate is injected.
+retry() {
+  local attempts="$1" delay=2 n=1
+  shift
+  until "$@"; do
+    [ "$n" -lt "$attempts" ] || return 1
+    log "attempt $n/$attempts failed, retrying in ${delay}s: $*"
+    sleep "$delay"
+    n=$((n + 1))
+    delay=$((delay * 2))
+  done
+}
+
+sha256() {
+  if command -v sha256sum >/dev/null; then sha256sum "$1" | cut -d' ' -f1; else shasum -a 256 "$1" | cut -d' ' -f1; fi
+}
 
 cluster_exists() { kind get clusters 2>/dev/null | grep -qx "$KIND_CLUSTER_NAME"; }
 

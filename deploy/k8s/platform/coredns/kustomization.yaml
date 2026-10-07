@@ -1,0 +1,6 @@
+# CoreDNS rewrite of *.polaris.local to the Gateway Service (K3, D7). Applied by scripts/k8s/up.sh after the
+# Gateway exists; validated by scripts/k8s/validate.sh.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - coredns.yaml
