@@ -40,7 +40,7 @@ Compose stays the inner-loop dev environment. Kubernetes doesn't replace it in t
 | D3 | Kafka | **Strimzi** operator, KRaft `KafkaNodePool` of 3 dual-role nodes | Same topology as Compose (TR-B1); operator-managed rolling restarts | Bitnami chart |
 | D4 | Keycloak | **Keycloak Operator** with `KeycloakRealmImport` (placeholders from a Secret for `DEFAULT_PASSWORD` and the emulator secret) | Production mode instead of `start-dev`; upstream-supported realm import | Plain Deployment with `--import-realm` |
 | D5 | Gateway | **Gateway API** with **NGINX Gateway Fabric** | Gateway API is the standard successor to Ingress (ingress-nginx is retired); keeps nginx semantics and native OTel tracing | Envoy Gateway |
-| D6 | TLS | **cert-manager** with a self-signed local root CA (`ClusterIssuer`), distributed to pods by **trust-manager** as a JKS bundle | Replaces the mkcert certificates and the hand-copied `truststore.jks` | Keep mkcert certs as static Secrets |
+| D6 | TLS | **cert-manager** with a self-signed local root CA (`ClusterIssuer`), distributed to pods by **trust-manager** as a JKS and PKCS12 bundle (JKS is deprecated upstream) | Replaces the mkcert certificates and the hand-copied `truststore.jks` | Keep mkcert certs as static Secrets |
 | D7 | In-cluster resolution of `id.polaris.local` | **CoreDNS rewrite** of `*.polaris.local` to the Gateway Service | Keeps one issuer (TR-K8) with no app change, same as the nginx alias on `polaris-net` | `hostAliases` per pod |
 | D8 | Observability backend | **OTel Collector → Grafana Cloud** (already configured in `.env`). The local Prometheus, Loki, Tempo and Grafana move to K12 | Smallest working slice. The in-cluster LGTM stack is large and optional locally | Deploy LGTM charts from the start |
 | D9 | Image registry | **GHCR**, pushed by CI. Local runs use `kind load docker-image` | No registry needed on the laptop | Local registry container |
@@ -96,7 +96,7 @@ Slices run top to bottom; only the `execute-plan` coordinator edits this table.
 | 1 | K1 | Cluster bootstrap, layout and CI skeleton | `done` | Decisions D1–D10 confirmed | `k8s/k1-cluster-bootstrap` | [#2](https://github.com/vungdv/polaris-assistant/pull/2) | Merged 396851f |
 | 2 | K2 | Application images in CI | `done` | GHCR package write permission on the repo | `k8s/k2-app-images` | [#3](https://github.com/vungdv/polaris-assistant/pull/3) | Merged de719a9. Flaky trunk tests fixed in #4 (0db2cf1) |
 | 3 | K3 | Edge: TLS, Gateway and DNS | `done` | — | `k8s/k3-edge` | [#5](https://github.com/vungdv/polaris-assistant/pull/5) | Merged 23fdda9 |
-| 4 | K4 | Observability pipeline | `todo` | Grafana Cloud OTLP credentials available to CI as secrets | | | |
+| 4 | K4 | Observability pipeline | `todo` | — | | | |
 | 5 | K5 | Data stores: PostgreSQL and Redis | `todo` | — | | | |
 | 6 | K6 | Kafka cluster | `todo` | — | | | |
 | 7 | K7 | Identity: Keycloak | `todo` | — | | | |
@@ -131,11 +131,11 @@ Slices run top to bottom; only the `execute-plan` coordinator edits this table.
 - NGINX Gateway Fabric installed. A `Gateway` with HTTPS listeners for the three hosts and an HTTP→HTTPS redirect.
 - The CoreDNS rewrite resolves `*.polaris.local` to the Gateway Service inside the cluster.
 - `scripts/setup-local-https-mac-m1.sh` gains a step that trusts the cluster root CA on the host.
-- Smoke: from a pod, `https://polaris.local` resolves to the Gateway and the certificate verifies against the bundle. A placeholder route returns 404 (problem+json is not required at the edge).
+- Smoke: from a pod, `https://polaris.local` resolves to the Gateway and the certificate verifies against the bundle. An unrouted path returns 404. NGF answers unmatched paths with 404, so no placeholder route is needed. Problem+json is not required at the edge.
 
 ### K4: Observability pipeline
 **Covers:** TR-K9, D8.
-- OTel Collector (upstream chart, contrib image) as a Deployment with OTLP gRPC and HTTP Services. Its config is ported from `docker/telemetry/otel-collector-config.yaml`, plus the `k8sattributes` processor (with its RBAC) and the Grafana Cloud exporter. Credentials come from a Secret.
+- OTel Collector (upstream chart, contrib image) as a Deployment with OTLP gRPC and HTTP Services. Its config is ported from `docker/telemetry/otel-collector-config.yaml`, plus the `k8sattributes` processor (with its RBAC) and the Grafana Cloud exporter. Credentials come from a Secret. The Grafana Cloud exporter config is kept as is, but it is not a gate: CI runs without Grafana Cloud credentials and the smoke uses the debug exporter.
 - The Gateway exports spans to the Collector and propagates `traceparent`. Its access logs stay JSON with `trace_id` and `span_id`.
 - The nginx syslog access-log receiver is replaced by Collector log collection from the Gateway pod's stdout.
 - Smoke: a request through the Gateway produces a span carrying `k8s.pod.name`, as seen in the Collector's debug exporter in CI.
@@ -191,7 +191,7 @@ Slices run top to bottom; only the `execute-plan` coordinator edits this table.
 
 ### K12: Local LGTM stack and runbook
 **Covers:** TR-K9 (local parity with Compose dashboards), D8 follow-up.
-- Optional `overlays/local-lgtm` component: Prometheus, Loki, Tempo and Grafana from upstream charts, configured from the existing files under `docker/telemetry/` (dashboards, SLO rules, datasources). Grafana SSO through the Keycloak master realm, as in Compose. `HTTPRoute` for `grafana.polaris.local`.
+- Optional `overlays/local-lgtm` component: Prometheus, Loki, Tempo and Grafana from upstream charts, configured from the existing files under `docker/telemetry/` (dashboards, SLO rules, datasources). Grafana SSO through the Keycloak master realm, as in Compose. `HTTPRoute` for `grafana.polaris.local`. The K3 Gateway listeners accept routes from the `polaris` namespace only, so Grafana in another namespace needs `allowedRoutes` widened for its listener.
 - The Collector fans out to both the local stack and Grafana Cloud when the component is enabled.
 - `make test-rules` still passes against the same rule files.
 - `docs/operations/k8s-runbook.md`: bring up, tear down, secrets, image reload, Kafka and Postgres admin, rolling restart, troubleshooting. The root README links it.
@@ -211,3 +211,4 @@ Slices run top to bottom; only the `execute-plan` coordinator edits this table.
 |:--|:--|:--|:--|
 | 2026-10-06 | Fixed slice references: D8 now points to K12 for the local LGTM stack, §Topology to K11 for NetworkPolicies | Stale numbering from an earlier draft | K11, K12 |
 | 2026-10-07 | K11: Pod Security `restricted` is enforced from K1, K11 only checks every pod passes. Goal: Compose and kind can't run together (both bind 80/443). Layout: `scripts/k8s/` helpers listed. K2: dropped stale "today it uses 17" | Found while implementing and reviewing K1 and K2 | K1, K2, K11 |
+| 2026-10-07 | K4 no longer gated on Grafana Cloud OTLP credentials in CI; the exporter config is kept as is. K3: smoke checks an unrouted path returns 404 (no placeholder route). D6: bundle is JKS and PKCS12. K12: note on Gateway `allowedRoutes` for Grafana | User decision on the K4 gate; findings from the K3 review | K3, K4, K12 |
