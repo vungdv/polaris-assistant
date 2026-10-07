@@ -96,7 +96,7 @@ Slices run top to bottom; only the `execute-plan` coordinator edits this table.
 | 1 | K1 | Cluster bootstrap, layout and CI skeleton | `done` | Decisions D1–D10 confirmed | `k8s/k1-cluster-bootstrap` | [#2](https://github.com/vungdv/polaris-assistant/pull/2) | Merged 396851f |
 | 2 | K2 | Application images in CI | `done` | GHCR package write permission on the repo | `k8s/k2-app-images` | [#3](https://github.com/vungdv/polaris-assistant/pull/3) | Merged de719a9. Flaky trunk tests fixed in #4 (0db2cf1) |
 | 3 | K3 | Edge: TLS, Gateway and DNS | `done` | — | `k8s/k3-edge` | [#5](https://github.com/vungdv/polaris-assistant/pull/5) | Merged 23fdda9 |
-| 4 | K4 | Observability pipeline | `approved` | — | `k8s/k4-observability` | [#7](https://github.com/vungdv/polaris-assistant/pull/7) | |
+| 4 | K4 | Observability pipeline | `done` | — | `k8s/k4-observability` | [#7](https://github.com/vungdv/polaris-assistant/pull/7) | Merged 8bfee4c |
 | 5 | K5 | Data stores: PostgreSQL and Redis | `todo` | — | | | |
 | 6 | K6 | Kafka cluster | `todo` | — | | | |
 | 7 | K7 | Identity: Keycloak | `todo` | — | | | |
