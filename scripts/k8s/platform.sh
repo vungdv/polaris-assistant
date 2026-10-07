@@ -3,7 +3,8 @@
 # at the versions pinned in deploy/k8s/versions.env (TR-K1), with values and CRs from deploy/k8s/platform/:
 #   cert-manager, trust-manager, the cluster PKI (root CA, CA ClusterIssuer, trust Bundle),
 #   the Gateway API CRDs, NGINX Gateway Fabric and the CoreDNS rewrite of *.polaris.local (K3);
-#   the OpenTelemetry Collector and its log agent (K4).
+#   the OpenTelemetry Collector and its log agent (K4);
+#   the CloudNativePG operator (K5).
 # Each step waits for readiness with a bounded timeout (K8S_WAIT_TIMEOUT). Safe to re-run. Called by up.sh.
 set -euo pipefail
 # shellcheck source=SCRIPTDIR/lib.sh
@@ -113,4 +114,6 @@ helm_install nginx-gateway-fabric nginx-gateway "$NGF_CHART" "$NGF_VERSION" \
 install_coredns_rewrite
 install_otel_collector
 install_otel_agent
+helm_install "$CNPG_RELEASE" "$CNPG_NAMESPACE" "$CNPG_CHART" "$CNPG_VERSION" \
+  --values "$PLATFORM_DIR/cloudnative-pg/values.yaml"
 log "platform components ready"

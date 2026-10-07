@@ -1,0 +1,7 @@
+# Redis (K5): Deployment and Service `redis` in the polaris namespace.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: polaris
+resources:
+  - deployment.yaml
+  - service.yaml

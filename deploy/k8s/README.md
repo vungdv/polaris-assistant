@@ -6,8 +6,8 @@ Manifests and tooling for running Polaris on Kubernetes ([ADR-0021](../../docs/t
 |:--|:--|
 | `versions.env` | Pinned versions of kind, its node image, kubectl, kubeconform, helm, the schema catalogs and the platform charts |
 | `kind/cluster.yaml` | Local kind cluster: host ports 80/443 → NodePorts 30080/30443 |
-| `platform/` | Helm values and CRs for third-party components: cert-manager, trust-manager, NGINX Gateway Fabric, the cluster PKI (`pki/`), the CoreDNS rewrite (`coredns/`), the OpenTelemetry Collector (`otel-collector/`) and its log agent (`otel-agent/`) |
-| `base/` | Cluster-agnostic manifests: the `polaris` namespace (Pod Security `restricted`), then one directory per component (`edge/`: Gateway, certificate, HTTP redirect, tracing policy) |
+| `platform/` | Helm values and CRs for third-party components: cert-manager, trust-manager, NGINX Gateway Fabric, the cluster PKI (`pki/`), the CoreDNS rewrite (`coredns/`), the OpenTelemetry Collector (`otel-collector/`) and its log agent (`otel-agent/`), the CloudNativePG operator (`cloudnative-pg/`) |
+| `base/` | Cluster-agnostic manifests: the `polaris` namespace (Pod Security `restricted`), then one directory per component (`edge/`: Gateway, certificate, HTTP redirect, tracing policy; `data/`: PostgreSQL Clusters; `redis/`) |
 | `overlays/local/` | The kind environment: image tags, replica counts, Secrets from the untracked `deploy/k8s/.env.local` |
 | `overlays/local/images/` | Generated and untracked: the Kustomize component that pins each app image to `ghcr.io/<owner>/<app>:<git-sha>` of the current checkout |
 
@@ -111,3 +111,41 @@ chart's appVersion) twice:
   (Compose's `otlp_http/grafana_cloud` exporter and `basicauth/grafana_cloud` extension) on the Collector. Without
   them, as in CI, the Secret is removed and the Collector exports to its debug exporter only. Values are read as
   `KEY=value` lines, without quotes.
+
+## Data stores: PostgreSQL and Redis
+
+`make k8s-up` installs the CloudNativePG operator from its upstream chart (`CNPG_VERSION`, release `cloudnative-pg` in
+namespace `cnpg-system`, values in `platform/cloudnative-pg/values.yaml`), applies the Clusters and Redis with the
+overlay, and waits until every Cluster is `Ready` and Redis is available.
+
+| Compose service | Kubernetes | Database / owner | Credentials (operator-generated) | Primary endpoint |
+|:--|:--|:--|:--|:--|
+| `polaris-db` | CNPG `Cluster` `polaris-db` (`base/data/polaris-db.yaml`) | `polaris` / `polaris` | Secret `polaris-db-app` | Service `polaris-db-rw:5432` |
+| `postgres` (keycloak-postgres) | CNPG `Cluster` `keycloak-db` (`base/data/keycloak-db.yaml`) | `keycloak` / `keycloak` | Secret `keycloak-db-app` | Service `keycloak-db-rw:5432` |
+| `redis` | Deployment and Service `redis` (`base/redis/`) | — | none (as in Compose) | Service `redis:6379` |
+
+- **Parity with Compose.** PostgreSQL 16.15 (the release `postgres:16` resolves to) from CNPG's `standard` image on the
+  same Debian base, pinned by digest, with initdb in Compose's `en_US.utf8` locale (CNPG defaults to `C`). Each Compose
+  database has one owner role and nothing else (no extra roles, databases or extensions: V9's `pg_trgm` index is a
+  manual DBA note), so `bootstrap.initdb` (database + owner) mirrors it and no `managed.roles` are needed. `polaris` and
+  `polaris-assistant` share `polaris-db` and its owner, as in Compose. Redis is `redis:7.4.11-alpine` (what
+  `redis:7-alpine` resolves to) pinned by digest, with persistence off (`--save "" --appendonly no`).
+- **Credentials.** CNPG generates each owner's password into the `<cluster>-app` Secret (keys `username`, `password`,
+  `host`, `port`, `dbname`, `uri`, `jdbc-uri`). Nothing is committed (TR-K3). The apps read them from K7 (Keycloak) and
+  K8/K9 (`polaris`, `polaris-assistant`). Network superuser access stays off. For an admin shell:
+  `kubectl -n polaris exec -it polaris-db-1 -c postgres -- psql -d polaris`.
+- **Instances and storage.** `base` asks for three instances per Cluster (primary plus two replicas, CNPG failover).
+  `overlays/local` runs one each on kind's default StorageClass (`standard`, node-local) and turns off CNPG's
+  PodDisruptionBudget, which would block draining the node with a single instance. Data lives on the PVC, so it
+  survives pod restarts. `make k8s-down` deletes it with the cluster.
+- **Pod Security.** The operator's chart defaults, CNPG's instance and initdb pods, and the Redis pod (UID 999,
+  read-only root filesystem with an `emptyDir` at `/data`, no capabilities, seccomp `RuntimeDefault`) all pass
+  `restricted`, which the `polaris` namespace enforces.
+- **Smoke.** `make k8s-smoke` checks both Clusters and their Secrets, connects to each `-rw` Service with the owner's
+  credentials from a `restricted` probe pod (owner, database, collation, PostgreSQL 16), writes a row to `polaris-db`
+  (in a throwaway schema, so Flyway's `public` stays empty), deletes the primary pod, waits for CNPG to bring it back
+  (`PG_SMOKE_TIMEOUT`, default 180s) and reads the row again. It also runs `redis-cli ping` through the `redis` Service
+  and checks persistence is off.
+- **Validation.** kubeconform validates the Clusters against `postgresql.cnpg.io/cluster_v1.json` in the pinned CRDs
+  catalog. That schema is CNPG 1.29's, identical to the Cluster CRD of the pinned chart, which is why `CNPG_VERSION` is
+  held on the 1.29 line: bump it together with `CRDS_CATALOG_REF` once the catalog carries a newer schema.

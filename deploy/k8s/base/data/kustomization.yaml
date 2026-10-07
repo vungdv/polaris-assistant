@@ -1,0 +1,12 @@
+# Data stores (K5): one CloudNativePG Cluster per owning context (D2). Needs the CNPG operator and its CRDs
+# (platform/cloudnative-pg), which scripts/k8s/platform.sh installs first.
+#
+# Parity with Compose: each Compose database has a single owner role, created by the image from POSTGRES_DB and
+# POSTGRES_USER, and no other roles, databases or extensions (V9's pg_trgm index is a manual DBA note, not run by
+# Compose). bootstrap.initdb (database + owner) creates exactly that, so no managed.roles are needed.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: polaris
+resources:
+  - polaris-db.yaml
+  - keycloak-db.yaml

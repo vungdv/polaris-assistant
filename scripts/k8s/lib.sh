@@ -32,6 +32,12 @@ export KUBECONFIG="$K8S_KUBECONFIG"
   OTEL_COLLECTOR=otel-collector
   OTEL_AGENT=otel-agent
   OTEL_AGENT_NAMESPACE=observability
+  # Data stores (K5): the CloudNativePG operator in its own namespace (platform/cloudnative-pg), one PostgreSQL Cluster
+  # per owner and Redis in the app namespace (base/data, base/redis).
+  CNPG_RELEASE=cloudnative-pg
+  CNPG_NAMESPACE=cnpg-system
+  PG_CLUSTERS=(polaris-db keycloak-db)
+  REDIS=redis
 }
 # Untracked env file with the keys of .env.template (TR-K3): the source of the cluster's Secrets. Optional so far: K4
 # reads only the GRAFANA_CLOUD_* keys from it.

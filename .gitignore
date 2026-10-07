@@ -171,6 +171,8 @@ Thumbs.db
 # Local database and certificates
 data/
 *.jks
+# ...but not the PostgreSQL Cluster manifests (K5)
+!deploy/k8s/base/data/
 
 # Pinned Kubernetes tooling installed by scripts/k8s/tools.sh
 .tools/

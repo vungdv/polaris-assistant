@@ -8,3 +8,17 @@ components:
   # App image pins: ghcr.io/<owner>/<app>:<git-sha> (TR-K2). Generated and untracked: scripts/k8s/up.sh,
   # validate.sh and images.sh write it from the git HEAD (write_image_pins in scripts/k8s/lib.sh).
   - images
+patches:
+  # PostgreSQL (K5): one instance per Cluster on the single kind node, with its volume on kind's default StorageClass
+  # (standard). CNPG's PodDisruptionBudget for the primary would block every voluntary eviction of a lone instance
+  # (a node drain), so it is off here.
+  - target:
+      group: postgresql.cnpg.io
+      kind: Cluster
+    patch: |-
+      - op: replace
+        path: /spec/instances
+        value: 1
+      - op: add
+        path: /spec/enablePDB
+        value: false

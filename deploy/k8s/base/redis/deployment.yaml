@@ -1,0 +1,75 @@
+# Redis 7 (K5), as Compose's `redis` service: redis:7-alpine, persistence off (`--save "" --appendonly no`), one
+# replica. It holds only cache data that the apps can rebuild (they fall back to an in-process cache when it is down),
+# so a restart starts it empty, as in Compose. `polaris` and `polaris-assistant` connect to the Service `redis:6379` in K8 and K9.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  labels:
+    app.kubernetes.io/name: redis
+    app.kubernetes.io/part-of: polaris
+spec:
+  replicas: 1
+  # No persistence and one replica: replace the pod rather than run two empty instances side by side.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: redis
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: redis
+        app.kubernetes.io/part-of: polaris
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      # Pod Security `restricted` (TR-K10): the image's own `redis` user (UID 999, GID 1000), so the entrypoint runs
+      # redis-server directly instead of dropping privileges from root.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: redis
+          # 7.4.11-alpine, the release Compose's redis:7-alpine resolves to, pinned by digest (multi-arch index).
+          image: redis:7.4.11-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+          args: ["redis-server", "--save", "", "--appendonly", "no"]
+          ports:
+            - name: redis
+              containerPort: 6379
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          # Compose's healthcheck (`redis-cli ping`) gates readiness; liveness only needs the port to accept.
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            periodSeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            tcpSocket:
+              port: redis
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+          # The image's working directory (and VOLUME). With persistence off Redis writes nothing there, but it needs a
+          # writable directory under a read-only root filesystem.
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          emptyDir:
+            sizeLimit: 64Mi

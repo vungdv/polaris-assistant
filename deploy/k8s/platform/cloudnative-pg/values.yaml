@@ -1,0 +1,21 @@
+# Helm values for the CloudNativePG operator (K5, D2), installed by scripts/k8s/platform.sh from the upstream chart
+# ($CNPG_CHART at $CNPG_VERSION, deploy/k8s/versions.env) as the release `cloudnative-pg` in its own namespace
+# `cnpg-system`. The operator image tag is the chart's appVersion, so the chart pin also pins the image. The chart
+# installs the postgresql.cnpg.io CRDs, and the operator watches every namespace. The Clusters (polaris-db,
+# keycloak-db) are in deploy/k8s/base/data.
+#
+# The chart's defaults already meet Pod Security `restricted` (non-root UID 10001, read-only root filesystem, all
+# capabilities dropped, seccomp RuntimeDefault), so only resources are set here. The PostgreSQL pods the operator
+# creates in `polaris` meet `restricted` through CNPG's own pod and container security contexts.
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    memory: 512Mi
+
+monitoring:
+  podMonitorEnabled: false
+  grafanaDashboard:
+    create: false
