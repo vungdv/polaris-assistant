@@ -1,0 +1,8 @@
+# Helm values for cert-manager (K3, D6), installed by scripts/k8s/up.sh from the upstream chart
+# ($CERT_MANAGER_CHART at $CERT_MANAGER_VERSION, deploy/k8s/versions.env) into the `cert-manager` namespace.
+# The chart defaults already run every pod non-root with RuntimeDefault seccomp and no capabilities.
+crds:
+  # The chart owns the cert-manager CRDs, so `helm upgrade` keeps them at the pinned version.
+  enabled: true
+  # Keep the CRDs (and so every Certificate) if the release is ever uninstalled.
+  keep: true

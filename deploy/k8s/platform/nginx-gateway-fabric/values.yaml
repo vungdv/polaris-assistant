@@ -1,0 +1,20 @@
+# Helm values for NGINX Gateway Fabric (K3, D5), installed by scripts/k8s/up.sh from the upstream chart
+# ($NGF_CHART at $NGF_VERSION, deploy/k8s/versions.env) into the `nginx-gateway` namespace. The control plane runs
+# there; NGF provisions each Gateway's nginx data plane (Deployment + Service `<gateway>-nginx`) in the Gateway's own
+# namespace. Its pod is non-root, drops all capabilities and uses only the `restricted`-safe sysctl
+# net.ipv4.ip_unprivileged_port_start, so it runs in the `polaris` namespace under Pod Security `restricted`.
+nginxGateway:
+  gatewayClassName: nginx
+  # No usage reporting to F5 from a dev cluster.
+  productTelemetry:
+    enable: false
+nginx:
+  service:
+    # kind maps host ports 80/443 to these fixed NodePorts (deploy/k8s/kind/cluster.yaml), so the data plane needs
+    # no hostPort, which Pod Security `restricted` forbids. A cloud overlay switches this back to LoadBalancer.
+    type: NodePort
+    nodePorts:
+      - port: 30080
+        listenerPort: 80
+      - port: 30443
+        listenerPort: 443

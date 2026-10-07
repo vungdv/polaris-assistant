@@ -1,0 +1,39 @@
+# Bootstrap issuer: it only signs the root CA below.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: polaris-selfsigned
+spec:
+  selfSigned: {}
+---
+# The local root CA. Its Secret stays in `cert-manager`: the cluster resource namespace the CA ClusterIssuer reads
+# from, and the trust namespace trust-manager reads Bundle sources from. `make k8s-down` discards it with the cluster.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: polaris-root-ca
+  namespace: cert-manager
+spec:
+  isCA: true
+  commonName: Polaris Local Root CA
+  subject:
+    organizations:
+      - Polaris local kind cluster
+  secretName: polaris-root-ca
+  duration: 87600h # 10 years: a local cluster is recreated long before this
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    group: cert-manager.io
+    kind: ClusterIssuer
+    name: polaris-selfsigned
+---
+# Signs the edge certificate (base/edge) and any later workload certificate with the root CA.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: polaris-ca
+spec:
+  ca:
+    secretName: polaris-root-ca
