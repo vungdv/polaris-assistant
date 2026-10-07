@@ -179,3 +179,6 @@ data/
 
 # Image tag pins generated from the git HEAD by scripts/k8s/lib.sh (write_image_pins)
 deploy/k8s/overlays/local/images/
+
+# Keycloak realm imports generated from docker/keycloak/*.json by scripts/k8s/lib.sh (write_realm_imports)
+deploy/k8s/overlays/local/realms/

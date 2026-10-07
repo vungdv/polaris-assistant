@@ -1,0 +1,25 @@
+# Keycloak Operator (K7, D4), from its upstream release manifests at KEYCLOAK_VERSION (deploy/k8s/versions.env):
+# the Keycloak and KeycloakRealmImport CRDs and kubernetes.yml (ServiceAccount, RBAC, Deployment). They are not in the
+# repo: scripts/k8s/platform.sh (and validate.sh) copy this directory to a temporary one, download the three files
+# next to it and verify their SHA-256 (stage_keycloak_operator in scripts/k8s/lib.sh), then apply or render it.
+#
+# The upstream install is single-namespace: the operator watches the namespace it runs in, with namespaced Roles. Its
+# Keycloak must sit next to `keycloak-db` (the CNPG Secret keycloak-db-app) and behind the Gateway (routes from the
+# same namespace only), so the operator runs in `polaris`. The patches make its pod pass Pod Security `restricted` and
+# point the one upstream ClusterRoleBinding (hard-coded to namespace `keycloak`) at this namespace.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: polaris
+resources:
+  - keycloaks.k8s.keycloak.org-v1.yml
+  - keycloakrealmimports.k8s.keycloak.org-v1.yml
+  - kubernetes.yml
+patches:
+  - path: deployment-patch.yaml
+  - target:
+      kind: ClusterRoleBinding
+      name: keycloak-operator-clusterrole-binding
+    patch: |-
+      - op: replace
+        path: /subjects/0/namespace
+        value: polaris

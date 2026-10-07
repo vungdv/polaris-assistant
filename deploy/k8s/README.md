@@ -6,9 +6,10 @@ Manifests and tooling for running Polaris on Kubernetes ([ADR-0021](../../docs/t
 |:--|:--|
 | `versions.env` | Pinned versions of kind, its node image, kubectl, kubeconform, helm, the schema catalogs and the platform charts |
 | `kind/cluster.yaml` | Local kind cluster: host ports 80/443 → NodePorts 30080/30443 |
-| `platform/` | Helm values and CRs for third-party components: cert-manager, trust-manager, NGINX Gateway Fabric, the cluster PKI (`pki/`), the CoreDNS rewrite (`coredns/`), the OpenTelemetry Collector (`otel-collector/`) and its log agent (`otel-agent/`), the CloudNativePG operator (`cloudnative-pg/`), the Strimzi operator (`strimzi/`) |
-| `base/` | Cluster-agnostic manifests: the `polaris` namespace (Pod Security `restricted`), then one directory per component (`edge/`: Gateway, certificate, HTTP redirect, tracing policy; `data/`: PostgreSQL Clusters; `redis/`; `kafka/`: the Kafka cluster) |
+| `platform/` | Helm values and CRs for third-party components: cert-manager, trust-manager, NGINX Gateway Fabric, the cluster PKI (`pki/`), the CoreDNS rewrite (`coredns/`), the OpenTelemetry Collector (`otel-collector/`) and its log agent (`otel-agent/`), the CloudNativePG operator (`cloudnative-pg/`), the Strimzi operator (`strimzi/`), the Keycloak Operator (`keycloak-operator/`: patches over its upstream release manifests) |
+| `base/` | Cluster-agnostic manifests: the `polaris` namespace (Pod Security `restricted`), then one directory per component (`edge/`: Gateway, certificate, HTTP redirect, tracing policy; `data/`: PostgreSQL Clusters; `redis/`; `kafka/`: the Kafka cluster; `keycloak/`: the Keycloak server and its HTTPRoute) |
 | `overlays/local/` | The kind environment: image tags, replica counts, Secrets from the untracked `deploy/k8s/.env.local` |
+| `overlays/local/realms/` | Generated and untracked: the Kustomize component that imports `docker/keycloak/*.json` (KeycloakRealmImport `polaris-realm`, ConfigMap `keycloak-master-realm`) |
 | `overlays/local/images/` | Generated and untracked: the Kustomize component that pins each app image to `ghcr.io/<owner>/<app>:<git-sha>` of the current checkout |
 
 | Command | What it does |
@@ -188,3 +189,59 @@ overlay and waits until it is `Ready`.
 - **Validation.** kubeconform validates the `Kafka` and `KafkaNodePool` (API `kafka.strimzi.io/v1`) against the
   pinned CRDs catalog, whose schemas are those of Strimzi 0.49.1. Bump `STRIMZI_VERSION` together with
   `CRDS_CATALOG_REF` once the catalog carries a newer Strimzi.
+
+## Identity: Keycloak
+
+`make k8s-up` installs the Keycloak Operator (`KEYCLOAK_VERSION`) from its upstream release manifests: the
+`Keycloak` and `KeycloakRealmImport` CRDs and `kubernetes.yml`, downloaded and verified against the SHA-256s in
+`versions.env`. `platform/keycloak-operator` holds only the kustomization that patches them. The upstream install is
+single-namespace, because the operator watches the namespace it runs in. So the operator runs in `polaris`, next to
+the `keycloak-db` Secret and the Gateway, with a `restricted` security context added. `make k8s-up` then applies the
+`Keycloak` and the realm imports with the overlay, and waits until the server is ready, the import is done and the
+operator's post-import restart has finished.
+
+| Compose (`keycloak`) | Kubernetes |
+|:--|:--|
+| `quay.io/keycloak/keycloak:26.2`, `start-dev` | `Keycloak` `keycloak` (`base/keycloak/keycloak.yaml`): 26.2.5 pinned by digest, production mode (`start`), StatefulSet `keycloak`, Service `keycloak-service` (8080 HTTP, 9000 management) |
+| `postgres` service, `keycloak`/`keycloak` | CNPG `keycloak-db`, credentials from the operator-generated Secret `keycloak-db-app` |
+| `KC_HOSTNAME`, `KC_PROXY_HEADERS=xforwarded` behind nginx | `hostname: https://id.polaris.local`, `proxy.headers: xforwarded`, HTTP on 8080 behind the Gateway, which terminates TLS |
+| `KC_TRACING_*` to `otel-collector:4317` | `tracing` to `otel-collector.polaris:4317`, sampler `traceidratio` 1.0, service name `keycloak` |
+| `--import-realm` of `docker/keycloak/*.json` | `polaris-realm.json` as a `KeycloakRealmImport`; `master-realm.json` imported by the server at its first start (see below) |
+| `KEYCLOAK_ADMIN=admin` / `admin` | The operator's bootstrap admin, generated into the Secret `keycloak-initial-admin` (`username`, `password`) |
+| nginx `id.polaris.local` server | `HTTPRoute` `keycloak` (`base/keycloak/httproute.yaml`) on listener `https-id`, traced by `edge-tracing` |
+
+- **Realms.** `docker/keycloak/` stays the single source for Compose and Kubernetes. A `KeycloakRealmImport` takes
+  the realm inline, so `make k8s-up` and `make k8s-validate` generate the untracked component `overlays/local/realms`
+  from the JSON files (`write_realm_imports` in `scripts/k8s/lib.sh`, with `jq`). The operator imports
+  `polaris-realm.json` with a Job, once. The master realm can't be imported that way: the Job runs only when the server
+  is ready, and by then the server has created its built-in master realm. The Job never overrides an existing realm,
+  so it would skip `master-realm.json`. So the server imports `master-realm.json` itself at its first start, as Compose
+  does: the file comes from the ConfigMap `keycloak-master-realm` in `/opt/keycloak/data/import`, with
+  `start --import-realm`. That brings in Grafana's SSO client, its roles and `grafana-admin`. As on Compose, imports
+  only happen in an empty database. Changing a realm file later needs a fresh database (`make k8s-down`), or a change
+  made in the admin console.
+- **Placeholders.** `${DEFAULT_PASSWORD}` and `${POLARIS_FULFILMENT_EMULATOR_SECRET}` stay in the files. Both
+  importers resolve them from the Secret `keycloak-realm-placeholders`: `spec.placeholders` for the import Job, and `envFrom`
+  on the server container for its master import. `up.sh` writes the Secret from the untracked env file (same keys as
+  `.env.template`). A key that isn't set (as in CI) keeps the value the Secret already has, or is generated at random
+  once. Read it with
+  `kubectl -n polaris get secret keycloak-realm-placeholders -o jsonpath='{.data.DEFAULT_PASSWORD}' | base64 -d`.
+- **Admin.** The operator's bootstrap admin (`keycloak-initial-admin`) replaces Compose's `admin`/`admin`. Pass it
+  as `KC_ADMIN_USER` / `KC_ADMIN_PASSWORD` to tooling such as `make seed-shoppers`.
+- **Pod Security.** The operator's pod and the Keycloak pods (UID 1000, no capabilities, seccomp `RuntimeDefault`)
+  pass `restricted`. So does the import Job, which copies the server's pod template. Keycloak's root filesystem stays
+  writable because an unoptimized start rebuilds `/opt/keycloak/lib`. The operator's Ingress and NetworkPolicy are off:
+  routing is the HTTPRoute, and K11 brings the namespace's allow list.
+- **Smoke.** `make k8s-smoke` checks the operator, the `Keycloak` and the import. From a `restricted` pod it fetches
+  the polaris realm's OIDC discovery through the Gateway (issuer `https://id.polaris.local/realms/polaris`). It also
+  checks these grants:
+  - a password grant for `testuser` (client `polaris-app`)
+  - a client-credentials grant for `polaris-fulfilment-emulator`
+  - a master-realm grant for `grafana-admin`
+  - an admin-API read of master's `grafana` client with the bootstrap admin
+
+  It then checks health and metrics on port 9000, and repeats the discovery check from the host through kind's port
+  mapping (`curl --resolve`, cluster root CA). Last, it waits for Keycloak spans in the Collector.
+- **Validation.** kubeconform validates the `Keycloak` and `KeycloakRealmImport` against the pinned CRDs catalog.
+  Its `v2alpha1` schemas come from a newer Keycloak, and their spec is a strict superset of 26.2.5's. The API server
+  validates the CRs strictly against the installed 26.2.5 CRDs on every apply (see `versions.env`).

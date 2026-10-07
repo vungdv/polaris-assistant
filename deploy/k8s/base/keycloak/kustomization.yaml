@@ -1,0 +1,10 @@
+# Identity (K7): the Keycloak server and its route. Needs the Keycloak Operator and its CRDs
+# (platform/keycloak-operator), installed by scripts/k8s/platform.sh, plus what the overlay provides: the realm imports
+# (the generated overlays/local/realms component: KeycloakRealmImport polaris-realm and ConfigMap keycloak-master-realm)
+# and the Secret keycloak-realm-placeholders (scripts/k8s/up.sh, from the untracked env file).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: polaris
+resources:
+  - keycloak.yaml
+  - httproute.yaml

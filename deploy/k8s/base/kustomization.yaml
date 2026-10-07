@@ -6,3 +6,4 @@ resources:
   - data
   - redis
   - kafka
+  - keycloak
