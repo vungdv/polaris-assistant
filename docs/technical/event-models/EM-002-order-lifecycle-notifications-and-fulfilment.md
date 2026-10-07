@@ -294,7 +294,7 @@ Dependency direction: `messaging → domain ← channel.email` (the domain owns 
 
 | Service | Image | Notes |
 | :--- | :--- | :--- |
-| `kafka-1..3` | `apache/kafka:3.9.1` | Three-node KRaft cluster (no ZooKeeper; every node broker + controller), PLAINTEXT listeners `kafka-N:9092` on `polaris-net`, `KAFKA_AUTO_CREATE_TOPICS_ENABLE=false`, replication 3 with min ISR 2 (Plan 2 B3) |
+| `kafka-1..3` | `apache/kafka:4.1.1` | Three-node KRaft cluster (no ZooKeeper; every node broker + controller), PLAINTEXT listeners `kafka-N:9092` on `polaris-net`, `KAFKA_AUTO_CREATE_TOPICS_ENABLE=false`, replication 3 with min ISR 2 (Plan 2 B3) |
 | `mailpit` | `axllent/mailpit` (pin the version when implementing) | SMTP `1025` (internal), web UI `8025` published to the host → `http://localhost:8025` |
 | `polaris-fulfilment-emulator` | built from `apps/polaris-fulfilment-emulator/Dockerfile` | depends on `kafka` |
 | `polaris-notification` | built from `apps/polaris-notification/Dockerfile` | depends on `kafka`, `mailpit` |

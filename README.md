@@ -158,6 +158,11 @@ The dev stack runs three Kafka nodes (`kafka-1..3`). Each node is both a broker 
 
 Before this change the stack had a single `kafka` service. Remove its orphaned container and volume with `docker rm -f kafka && docker volume rm 03-polaris_kafka_data` (check the volume name with `docker volume ls`), or run `make clean`.
 
+The nodes run `apache/kafka:4.1.1`, the same Kafka version as the Kubernetes cluster. Volumes created by the earlier `apache/kafka:3.9.1` image still start on 4.1.1 and keep their data, but the cluster keeps `metadata.version` 3.9-IV0 until you finalize it. A fresh 4.1.1 cluster starts at 4.1-IV1. To match a fresh cluster, either:
+
+- recreate the volumes (this loses local topics and data): `docker compose rm -sf kafka-1 kafka-2 kafka-3 && docker volume rm polaris-assistant_kafka_1_data polaris-assistant_kafka_2_data polaris-assistant_kafka_3_data` (check the names with `docker volume ls`), or `make clean` for the whole stack, then `make up`; or
+- keep the data and finalize the features once every node runs 4.1.1: `docker compose exec kafka-1 /opt/kafka/bin/kafka-features.sh --bootstrap-server kafka-1:9092 upgrade --release-version 4.1`. Check the result with `kafka-features.sh ... describe`. This step can't be undone. It also moves `kraft.version` to 1, while a fresh cluster with static voters stays at 0.
+
 ---
 
 ## Detailed Guides & Deep Dives

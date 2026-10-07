@@ -19,7 +19,7 @@ public class TestcontainersConfiguration {
     }
 
     /** Same image and topic policy as compose (TR-B1): topics exist only if their owner provisions them. */
-    public static final String KAFKA_IMAGE = "apache/kafka:3.9.1";
+    public static final String KAFKA_IMAGE = "apache/kafka:4.1.1";
 
     @Bean
     @ServiceConnection

@@ -96,7 +96,7 @@ class FulfilmentEmulatorIntegrationTest {
         @Bean
         @ServiceConnection
         KafkaContainer kafkaContainer() {
-            return new KafkaContainer("apache/kafka:3.9.1").withEnv("KAFKA_AUTO_CREATE_TOPICS_ENABLE", "false");
+            return new KafkaContainer("apache/kafka:4.1.1").withEnv("KAFKA_AUTO_CREATE_TOPICS_ENABLE", "false");
         }
 
         /** Order owns this topic in the real system; the test plays Order. */
