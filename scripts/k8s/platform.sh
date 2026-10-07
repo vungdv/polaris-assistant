@@ -4,7 +4,8 @@
 #   cert-manager, trust-manager, the cluster PKI (root CA, CA ClusterIssuer, trust Bundle),
 #   the Gateway API CRDs, NGINX Gateway Fabric and the CoreDNS rewrite of *.polaris.local (K3);
 #   the OpenTelemetry Collector and its log agent (K4);
-#   the CloudNativePG operator (K5).
+#   the CloudNativePG operator (K5);
+#   the Strimzi cluster operator (K6).
 # Each step waits for readiness with a bounded timeout (K8S_WAIT_TIMEOUT). Safe to re-run. Called by up.sh.
 set -euo pipefail
 # shellcheck source=SCRIPTDIR/lib.sh
@@ -103,6 +104,22 @@ install_otel_agent() {
     --values "$PLATFORM_DIR/otel-agent/values.yaml"
 }
 
+# The Strimzi chart ships its CRDs in crds/, which Helm installs on the first install and never upgrades. Applying them
+# from the pinned chart first keeps them at the operator's version on every run (a no-op when unchanged). The operator
+# watches the app namespace, where the chart creates its RoleBindings, so the namespace is applied first.
+install_strimzi() {
+  log "applying the Strimzi $STRIMZI_VERSION CRDs"
+  # helm reports the pull (Pulled:, Digest:) on stderr; show it only when the pull fails.
+  helm show crds "$STRIMZI_CHART" --version "$STRIMZI_VERSION" >"$tmp/strimzi-crds.yaml" 2>"$tmp/helm.err" ||
+    die "could not read the CRDs of $STRIMZI_CHART $STRIMZI_VERSION: $(cat "$tmp/helm.err")"
+  kctl apply --server-side --force-conflicts -f "$tmp/strimzi-crds.yaml" >/dev/null
+  kctl wait --for=condition=Established --timeout="$K8S_WAIT_TIMEOUT" \
+    crd/kafkas.kafka.strimzi.io crd/kafkanodepools.kafka.strimzi.io >/dev/null
+  kctl apply -f "$K8S_DIR/base/namespace.yaml" >/dev/null
+  helm_install "$STRIMZI_RELEASE" "$STRIMZI_NAMESPACE" "$STRIMZI_CHART" "$STRIMZI_VERSION" \
+    --values "$PLATFORM_DIR/strimzi/values.yaml"
+}
+
 helm_install cert-manager cert-manager "$CERT_MANAGER_CHART" "$CERT_MANAGER_VERSION" \
   --values "$PLATFORM_DIR/cert-manager/values.yaml"
 helm_install trust-manager cert-manager "$TRUST_MANAGER_CHART" "$TRUST_MANAGER_VERSION" \
@@ -116,4 +133,5 @@ install_otel_collector
 install_otel_agent
 helm_install "$CNPG_RELEASE" "$CNPG_NAMESPACE" "$CNPG_CHART" "$CNPG_VERSION" \
   --values "$PLATFORM_DIR/cloudnative-pg/values.yaml"
+install_strimzi
 log "platform components ready"
