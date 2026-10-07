@@ -1,0 +1,10 @@
+# Node-level telemetry agents (K4). The log agent DaemonSet reads the node's /var/log/pods through a read-only hostPath,
+# which Pod Security `restricted` and `baseline` both forbid, so it can't run in `polaris` (TR-K10). Only that agent
+# runs here, and the namespace says so explicitly: admission enforces `privileged`.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: observability
+  labels:
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/enforce-version: latest

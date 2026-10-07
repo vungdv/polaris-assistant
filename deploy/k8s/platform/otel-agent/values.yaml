@@ -1,0 +1,147 @@
+# Helm values for the log agent (K4): the same upstream OpenTelemetry Collector chart and contrib image as
+# platform/otel-collector, as a DaemonSet `otel-agent` in the `observability` namespace (namespace.yaml), installed by
+# scripts/k8s/platform.sh.
+#
+# It replaces Compose's nginx syslog receiver: nginx in the Gateway data plane writes its JSON access log to stdout
+# (platform/nginx-gateway-fabric), the kubelet stores it under /var/log/pods on the node, and this agent tails only the
+# stdout of the Gateway pod's `nginx` container there (file_log + the container parser, which sets k8s.namespace.name,
+# k8s.pod.name, k8s.pod.uid and k8s.container.name from the file path). It parses the JSON line as Compose did (trace_id/span_id
+# onto the log record, status to severity) and forwards it over OTLP to the Collector, which adds the remaining k8s
+# attributes, redacts and exports, as for every other log.
+#
+# Reading the node's log files needs a read-only hostPath mount and root (the files are root-owned, mode 0640), which
+# Pod Security `restricted` (and `baseline`) forbid, so the agent runs in its own namespace, not in `polaris`. It still
+# drops every capability, can't escalate, has a read-only root filesystem, no API token and no listening ports.
+# Checkpoints aren't stored (no writable hostPath): after an agent restart it resumes at the end of the file.
+
+mode: daemonset
+# The chart names a DaemonSet <fullname>-agent: DaemonSet and ConfigMap `otel-agent`.
+fullnameOverride: otel
+
+image:
+  repository: otel/opentelemetry-collector-contrib
+
+serviceAccount:
+  name: otel-agent
+  automountServiceAccountToken: false
+
+podSecurityContext:
+  runAsNonRoot: false
+  runAsUser: 0
+  runAsGroup: 0
+  seccompProfile:
+    type: RuntimeDefault
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+
+resources:
+  requests:
+    cpu: 20m
+    memory: 64Mi
+  limits:
+    memory: 256Mi
+
+extraVolumes:
+  - name: varlogpods
+    hostPath:
+      path: /var/log/pods
+      type: Directory
+extraVolumeMounts:
+  - name: varlogpods
+    mountPath: /var/log/pods
+    readOnly: true
+
+# No receiver listens: every chart port is off.
+ports:
+  otlp:
+    enabled: false
+  otlp-http:
+    enabled: false
+  jaeger-compact:
+    enabled: false
+  jaeger-thrift:
+    enabled: false
+  jaeger-grpc:
+    enabled: false
+  zipkin:
+    enabled: false
+
+config:
+  receivers:
+    jaeger: null
+    zipkin: null
+    prometheus: null
+    otlp: null
+    # /var/log/pods/<namespace>_<pod>_<pod-uid>/<container>/<restart>.log: the Gateway data plane `polaris-nginx`
+    # (Deployment of the Gateway `polaris`, base/edge) in `polaris`, container `nginx`.
+    file_log/gateway:
+      include:
+        - /var/log/pods/polaris_polaris-nginx-*_*/nginx/*.log
+      start_at: end
+      include_file_path: true
+      include_file_name: false
+      operators:
+        - type: container
+          id: container-parser
+
+  processors:
+    memory_limiter:
+      check_interval: 1s
+      limit_percentage: 30
+      spike_limit_percentage: 6
+    # The access log is the only thing nginx writes to stdout; stderr carries nginx's error log and the NGINX agent's
+    # own logs, which stay in `kubectl logs`.
+    filter/stdout:
+      error_mode: ignore
+      logs:
+        log_record:
+          - 'attributes["log.iostream"] != "stdout"'
+    resource/nginx:
+      attributes:
+        - {key: service.name, value: nginx-gateway, action: upsert}
+    # Parse the JSON access log (Compose's transform/nginx_logs, reading the container log line instead of the syslog
+    # message): promote trace_id/span_id to the log record (same correlation as app logs), keep the JSON as body,
+    # map 5xx to ERROR. A non-JSON stdout line (the start-up banner) passes through unparsed.
+    transform/nginx_logs:
+      error_mode: ignore
+      log_statements:
+        - context: log
+          statements:
+            - set(log.cache, ParseJSON(log.body)) where IsString(log.body) and IsMatch(log.body, "^\\{")
+            - set(log.trace_id.string, log.cache["trace_id"]) where IsString(log.cache["trace_id"]) and log.cache["trace_id"] != ""
+            - set(log.span_id.string, log.cache["span_id"]) where IsString(log.cache["span_id"]) and log.cache["span_id"] != ""
+            - set(log.attributes["http.response.status_code"], Int(log.cache["status"])) where log.cache["status"] != nil
+            - set(log.severity_number, SEVERITY_NUMBER_ERROR) where log.cache["status"] != nil and log.cache["status"] >= 500
+            - set(log.severity_number, SEVERITY_NUMBER_INFO) where log.cache["status"] != nil and log.cache["status"] < 500
+    batch:
+      timeout: 2s
+      send_batch_max_size: 8192
+
+  exporters:
+    debug: null
+    otlp_grpc/collector:
+      endpoint: otel-collector.polaris.svc.cluster.local:4317
+      tls:
+        insecure: true
+      timeout: 10s
+      retry_on_failure:
+        enabled: true
+        initial_interval: 5s
+        max_interval: 30s
+        max_elapsed_time: 120s
+      sending_queue:
+        enabled: true
+        num_consumers: 2
+        queue_size: 1000
+
+  service:
+    pipelines:
+      metrics: null
+      traces: null
+      logs:
+        receivers: [file_log/gateway]
+        processors: [memory_limiter, filter/stdout, resource/nginx, transform/nginx_logs, batch]
+        exporters: [otlp_grpc/collector]

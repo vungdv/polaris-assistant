@@ -1,9 +1,10 @@
-# Edge (K3): the Gateway, its TLS certificate and the HTTP -> HTTPS redirect. Needs the platform components
-# (cert-manager, the Gateway API CRDs, NGINX Gateway Fabric) and the CA ClusterIssuer from platform/pki, which
-# scripts/k8s/up.sh installs first.
+# Edge (K3): the Gateway, its TLS certificate and the HTTP -> HTTPS redirect, plus the Gateway's tracing policy (K4).
+# Needs the platform components (cert-manager, the Gateway API CRDs, NGINX Gateway Fabric) and the CA ClusterIssuer
+# from platform/pki, which scripts/k8s/up.sh installs first.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - certificate.yaml
   - gateway.yaml
   - http-redirect.yaml
+  - tracing-policy.yaml
