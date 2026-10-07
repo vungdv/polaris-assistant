@@ -206,7 +206,11 @@ class ProductCacheIntegrationTest {
         products.evict(productId);
         assertThat(inRedis(idKey(productId))).isFalse();
 
+        products.put(productId, product);
+        assertThat(inRedis(idKey(productId))).isTrue();
+        assertThat(inRedis(skuKey("NG-CHARGER-02"))).isTrue();
         products.clear();
+        assertThat(inRedis(idKey(productId))).isFalse();
         assertThat(inRedis(skuKey("NG-CHARGER-02"))).isFalse();
         // A cold L1 must now fall through to the database, not to a stale L2 entry still awaiting deletion.
         clearInvocations(productRepository);
