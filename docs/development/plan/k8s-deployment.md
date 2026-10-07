@@ -13,7 +13,7 @@ Kubernetes: OIDC login through `https://id.polaris.local`, catalogue and order A
 fulfilment emulator, and traces, metrics and logs reaching the OTel Collector with one `traceparent` from the
 gateway down.
 
-Compose stays the inner-loop dev environment. Kubernetes doesn't replace it in this plan.
+Compose stays the inner-loop dev environment. Kubernetes doesn't replace it in this plan. Compose and kind both bind host ports 80/443, so run one at a time (`KIND_CONFIG` overrides the kind ports for local runs).
 
 ## Technical Requirements
 
@@ -82,7 +82,7 @@ deploy/k8s/
     polaris/ polaris-assistant/ polaris-fulfilment-emulator/ swagger-ui/ redis/
     data/ kafka/ keycloak/ edge/ observability/
   overlays/local/                  # image tags, replica counts, secretGenerator from deploy/k8s/.env.local
-scripts/k8s/                       # up.sh, down.sh, smoke.sh
+scripts/k8s/                       # up.sh, down.sh, smoke.sh, plus helpers: lib.sh, tools.sh, validate.sh
 ```
 
 ## Slices
@@ -119,7 +119,7 @@ Slices run top to bottom; only the `execute-plan` coordinator edits this table.
 ### K2: Application images in CI
 **Covers:** TR-K2, TR-K4 (image side).
 - CI builds the three app images from their existing Dockerfiles and pushes `ghcr.io/<owner>/<app>:<git-sha>` on `main`. PRs build without pushing.
-- The Maven CI job uses JDK 21, matching the Dockerfiles (today it uses 17).
+- The Maven CI job uses JDK 21, matching the Dockerfiles.
 - The Dockerfiles drop `VOLUME /app/data`, which no app uses. The image runs as a numeric non-root UID so `runAsNonRoot` can verify it.
 - All three apps set `server.shutdown: graceful` and `spring.lifecycle.timeout-per-shutdown-phase`. A test shows an in-flight request completes after shutdown starts.
 - `make k8s-images` builds locally and runs `kind load docker-image`. The local overlay pins the tag.
@@ -186,7 +186,7 @@ Slices run top to bottom; only the `execute-plan` coordinator edits this table.
 **Covers:** TR-K5, TR-K10.
 - A default-deny NetworkPolicy for the namespace, plus allow rules for exactly the edges in §Topology, DNS, and egress to Gemini, TypeSafe and Grafana Cloud.
 - HPA on CPU for `polaris` and `polaris-assistant` (min 2, max 4 locally). metrics-server installed in kind.
-- Every pod passes Pod Security `restricted` (the namespace label is set to `enforce`).
+- Every pod passes Pod Security `restricted`, which the namespace has enforced since K1 (TR-K10).
 - Smoke: a pod outside the allow list can't reach `polaris-db` or Kafka. Draining a kind node during `api-test.js` keeps the error rate at 0, thanks to the PDBs.
 
 ### K12: Local LGTM stack and runbook
@@ -210,3 +210,4 @@ Slices run top to bottom; only the `execute-plan` coordinator edits this table.
 | Date | Change | Reason | Slices affected |
 |:--|:--|:--|:--|
 | 2026-10-06 | Fixed slice references: D8 now points to K12 for the local LGTM stack, §Topology to K11 for NetworkPolicies | Stale numbering from an earlier draft | K11, K12 |
+| 2026-10-07 | K11: Pod Security `restricted` is enforced from K1, K11 only checks every pod passes. Goal: Compose and kind can't run together (both bind 80/443). Layout: `scripts/k8s/` helpers listed. K2: dropped stale "today it uses 17" | Found while implementing and reviewing K1 and K2 | K1, K2, K11 |
