@@ -44,12 +44,12 @@ jobs:
     - name: Dump cluster state
       if: failure()
       run: |
-        .tools/bin/kubectl --context kind-polaris get all,events -A || true
-        .tools/bin/kubectl --context kind-polaris get clusterissuers,certificates,bundles,gateways,httproutes -A -o wide || true
-        .tools/bin/kubectl --context kind-polaris describe gateways,certificates -A || true
-        .tools/bin/kubectl --context kind-polaris get nginxproxies,observabilitypolicies -A -o yaml || true
-        .tools/bin/kubectl --context kind-polaris -n polaris logs deployment/otel-collector --tail=300 || true
-        .tools/bin/kubectl --context kind-polaris -n observability logs daemonset/otel-agent --tail=100 || true
+        .tools/bin/kubectl --kubeconfig .tools/kubeconfig --context kind-polaris get all,events -A || true
+        .tools/bin/kubectl --kubeconfig .tools/kubeconfig --context kind-polaris get clusterissuers,certificates,bundles,gateways,httproutes -A -o wide || true
+        .tools/bin/kubectl --kubeconfig .tools/kubeconfig --context kind-polaris describe gateways,certificates -A || true
+        .tools/bin/kubectl --kubeconfig .tools/kubeconfig --context kind-polaris get nginxproxies,observabilitypolicies -A -o yaml || true
+        .tools/bin/kubectl --kubeconfig .tools/kubeconfig --context kind-polaris -n polaris logs deployment/otel-collector --tail=300 || true
+        .tools/bin/kubectl --kubeconfig .tools/kubeconfig --context kind-polaris -n observability logs daemonset/otel-agent --tail=100 || true
         .tools/bin/kind export logs --name polaris "${RUNNER_TEMP}/kind-logs" || true
     - name: Upload kind logs
       if: failure()

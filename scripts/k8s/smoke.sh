@@ -5,7 +5,8 @@ set -euo pipefail
 # shellcheck source=SCRIPTDIR/lib.sh
 source "$(dirname "$0")/lib.sh"
 
-ensure_tools kubectl
+ensure_tools kind kubectl
+cluster_exists && ensure_kubeconfig
 
 failures=0
 pass() { log "PASS: $1"; }
