@@ -534,7 +534,8 @@ done
 #   password      a password grant for the seeded `testuser` (public client polaris-app, direct access grants on)
 #                 returns a token with that issuer: DEFAULT_PASSWORD was substituted into the KeycloakRealmImport
 #   emulator      a client_credentials grant for polaris-fulfilment-emulator with POLARIS_FULFILMENT_EMULATOR_SECRET
-#   grafana       a password grant in the master realm (admin-cli) for `grafana-admin`: master-realm.json was imported
+#   grafana       a password grant in the master realm (admin-cli) for `grafana-admin`: master-realm.json was imported,
+#                 with DEFAULT_PASSWORD substituted
 #   admin         the operator's bootstrap admin gets an admin token and finds master's `grafana` client
 #   health/metrics the management port (9000) answers in-cluster
 # Each line is `<check> <values...>`. The script is single-quoted, so its variables are the pod's own.
@@ -551,7 +552,7 @@ echo "password $(claims "$t" | field iss) $(claims "$t" | field preferred_userna
 t=$(token polaris -d grant_type=client_credentials -d client_id=polaris-fulfilment-emulator --data-urlencode "client_secret=$EMULATOR_SECRET")
 echo "emulator $(claims "$t" | field azp)"
 t=$(token master -d grant_type=password -d client_id=admin-cli -d username=grafana-admin --data-urlencode "password=$DEFAULT_PASSWORD")
-echo "grafana $(claims "$t" | field preferred_username)"
+echo "grafana $(claims "$t" | field iss) $(claims "$t" | field azp)"
 t=$(token master -d grant_type=password -d client_id=admin-cli --data-urlencode "username=$KC_ADMIN_USER" --data-urlencode "password=$KC_ADMIN_PASSWORD")
 echo "admin $(c -H "Authorization: Bearer $t" "$kc/admin/realms/master/clients?clientId=grafana" | field clientId)"
 echo "health $(curl -sS -o /dev/null --max-time 10 -w "%{http_code}" http://keycloak-service:9000/health/ready)"
@@ -571,8 +572,10 @@ if out="$(run_probe keycloak-smoke "$SMOKE_CURL_IMAGE" 100 "$kc_script" "$kc_env
     grep -qx "password $kc_issuer testuser" <<<"$out"
   check "client polaris-fulfilment-emulator gets a token with the secret from $KEYCLOAK_REALM_SECRET" \
     grep -qx "emulator polaris-fulfilment-emulator" <<<"$out"
+  # The imported master realm has no `basic` scope on admin-cli, so the token carries no preferred_username; that it
+  # is issued at all proves grafana-admin exists with DEFAULT_PASSWORD.
   check "the master realm was imported: grafana-admin gets a token with DEFAULT_PASSWORD" \
-    grep -qx "grafana grafana-admin" <<<"$out"
+    grep -qx "grafana https://id.polaris.local/realms/master admin-cli" <<<"$out"
   check "the operator's bootstrap admin ($KEYCLOAK-initial-admin) reads master's grafana client" \
     grep -qx "admin grafana" <<<"$out"
   check "Keycloak health/ready answers 200 on the management port" grep -qx "health 200" <<<"$out"
