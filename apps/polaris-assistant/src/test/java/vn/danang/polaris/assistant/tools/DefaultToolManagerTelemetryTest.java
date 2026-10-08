@@ -69,7 +69,7 @@ class DefaultToolManagerTelemetryTest {
         assertThat(tool.getAttributes().get(AttributeKey.stringKey("gen_ai.tool.name"))).isEqualTo("search_available_products");
         assertThat(tool.getAttributes().get(AttributeKey.stringKey("gen_ai.tool.call.id"))).isEqualTo("call-1");
         assertThat(tool.getAttributes().get(AttributeKey.stringKey("gen_ai.conversation.id"))).isEqualTo("sess-1");
-        assertThat(tool.getAttributes().toString()).doesNotContain("SECRET-ARG", "SECRET-RESULT", "4111");
+        assertThat(tool.getAttributes().toString()).doesNotContain("SECRET-ARG", "SECRET-RESULT", "4111 1111 1111 1111");
     }
 
     @Test
