@@ -28,7 +28,7 @@ Compose stays the inner-loop dev environment. Kubernetes doesn't replace it in t
 | TR-K7 | **Standard edge:** north–south traffic goes through the Gateway API (`Gateway` + `HTTPRoute`). TLS for `polaris.local`, `id.polaris.local` and `grafana.polaris.local` comes from cert-manager. SSE routes don't buffer and allow long-lived streams |
 | TR-K8 | **One issuer:** tokens are issued and validated against the public issuer `https://id.polaris.local/realms/polaris`, both from browsers and from inside the cluster. Apps trust the cluster CA through a mounted truststore, not by running as root |
 | TR-K9 | **Observable by default:** every app and the gateway export OTLP to an in-cluster OTel Collector. Telemetry carries Kubernetes resource attributes (`k8s.namespace.name`, `k8s.pod.name`, `k8s.deployment.name`). W3C trace context is continuous gateway → `polaris` → `polaris-assistant` (MCP) → Kafka → emulator |
-| TR-K10 | **Least privilege:** the namespace enforces Pod Security `restricted`. Pods run non-root with a read-only root filesystem where possible. Accepted exception (K4): the `observability` namespace runs Pod Security `privileged` for the `otel-agent` log DaemonSet (read-only hostPath to the Gateway pod's logs, no token, no ports, all capabilities dropped), because NGF has no syslog or OTLP access-log output. NetworkPolicies default-deny and allow only the flows listed in §Topology |
+| TR-K10 | **Least privilege:** the namespace enforces Pod Security `restricted`. Pods run non-root with a read-only root filesystem where possible. Accepted exception (K4): the `observability` namespace runs Pod Security `privileged` for the `otel-agent` log DaemonSet (read-only hostPath to the Gateway pod's logs, no token, no ports, all capabilities dropped), because NGF has no syslog or OTLP access-log output. Accepted trade-off (K7): the Keycloak Operator runs in `polaris` (upstream watches only its own namespace) and can read and write every Secret there. NetworkPolicies default-deny and allow only the flows listed in §Topology |
 | TR-K11 | **Verified in CI:** every slice adds to an automated smoke test that runs against a kind cluster in GitHub Actions, on the same public interfaces used in production (HTTPS through the gateway, OIDC, Kafka) |
 
 ## Decisions (to confirm in K1's ADR)
@@ -38,7 +38,7 @@ Compose stays the inner-loop dev environment. Kubernetes doesn't replace it in t
 | D1 | Packaging for our apps | **Kustomize** | Ships with `kubectl`, no templating language, overlays map cleanly to environments | Helm umbrella chart |
 | D2 | PostgreSQL | **CloudNativePG** operator, one `Cluster` per owner (`polaris-db`, `keycloak-db`) | Declarative backups (configured in K11), failover, standard Postgres images | Bitnami chart, plain StatefulSet |
 | D3 | Kafka | **Strimzi** operator, KRaft `KafkaNodePool` of 3 dual-role nodes | Same topology as Compose (TR-B1); operator-managed rolling restarts | Bitnami chart |
-| D4 | Keycloak | **Keycloak Operator** with `KeycloakRealmImport` (placeholders from a Secret for `DEFAULT_PASSWORD` and the emulator secret) | Production mode instead of `start-dev`; upstream-supported realm import | Plain Deployment with `--import-realm` |
+| D4 | Keycloak | **Keycloak Operator** with `KeycloakRealmImport` for `polaris` (the master realm is imported by the server at first start with `--import-realm`, because the operator's import runs after the built-in master exists and skips it) (placeholders from a Secret for `DEFAULT_PASSWORD` and the emulator secret) | Production mode instead of `start-dev`; upstream-supported realm import | Plain Deployment with `--import-realm` |
 | D5 | Gateway | **Gateway API** with **NGINX Gateway Fabric** | Gateway API is the standard successor to Ingress (ingress-nginx is retired); keeps nginx semantics and native OTel tracing | Envoy Gateway |
 | D6 | TLS | **cert-manager** with a self-signed local root CA (`ClusterIssuer`), distributed to pods by **trust-manager** as a JKS and PKCS12 bundle (JKS is deprecated upstream) | Replaces the mkcert certificates and the hand-copied `truststore.jks` | Keep mkcert certs as static Secrets |
 | D7 | In-cluster resolution of `id.polaris.local` | **CoreDNS rewrite** of `*.polaris.local` to the Gateway Service | Keeps one issuer (TR-K8) with no app change, same as the nginx alias on `polaris-net` | `hostAliases` per pod |
@@ -158,7 +158,7 @@ Slices run top to bottom; only the `execute-plan` coordinator edits this table.
 ### K7: Identity: Keycloak
 **Covers:** TR-K8 (issuer), D4.
 - Keycloak Operator. A `Keycloak` CR in production mode on `keycloak-db`, hostname `https://id.polaris.local`, proxy headers `xforwarded`, and tracing to the Collector.
-- `KeycloakRealmImport` for `master-realm.json` and `polaris-realm.json`, with `DEFAULT_PASSWORD` and `POLARIS_FULFILMENT_EMULATOR_SECRET` as placeholders from a Secret. The realm files stay the single source in `docker/keycloak/`, referenced by the overlay, not copied.
+- `polaris-realm.json` via `KeycloakRealmImport`, and `master-realm.json` imported by the server at first start (`--import-realm`, from a ConfigMap), both with `DEFAULT_PASSWORD` and `POLARIS_FULFILMENT_EMULATOR_SECRET` as placeholders from a Secret. The realm files stay the single source in `docker/keycloak/`, referenced by the overlay, not copied.
 - An `HTTPRoute` for `id.polaris.local`. Add each new `HTTPRoute` to `base/edge/tracing-policy.yaml` (NGF traces only routes in its `targetRefs`, at most 16).
 - Smoke: OIDC discovery at `https://id.polaris.local/realms/polaris/.well-known/openid-configuration` returns that issuer, both from the host and from a pod. A password-grant token is issued for a seeded test user.
 
@@ -176,17 +176,17 @@ Slices run top to bottom; only the `execute-plan` coordinator edits this table.
 - Readiness keeps today's semantics: it checks db and `polarisMcp` only, so Gemini or TypeSafe outages never take pods out of the Service.
 - `HTTPRoute`s for `/api/v1/assistant` (SSE) and `/v3/api-docs/assistant`. `terminationGracePeriodSeconds` covers the turn time budget, so a rolling restart doesn't cut an in-flight SSE turn. Add each new `HTTPRoute` to `base/edge/tracing-policy.yaml` (NGF traces only routes in its `targetRefs`, at most 16).
 - The assistant's sessions and order drafts survive a replica switch mid-conversation (JPA session store + Redis intents). Verified by pinning consecutive turns to different pods.
-- Smoke: `make seed-shoppers` and `make chat-scenarios` pass through the Gateway, and one trace spans Gateway → assistant → `polaris` (MCP).
+- Smoke: `make seed-shoppers` (with `KC_ADMIN_USER`/`KC_ADMIN_PASSWORD` from Secret `keycloak-initial-admin`, the operator's bootstrap admin, not Compose's `admin`/`admin`) and `make chat-scenarios` pass through the Gateway, and one trace spans Gateway → assistant → `polaris` (MCP).
 - Risk, out of scope: the assistant uses `ddl-auto: update` on the shared database. That conflicts with forward-only migrations and becomes riskier with multiple replicas. Raised as a follow-up, not fixed here.
 
 ### K10: Fulfilment (`polaris-fulfilment-emulator`)
 **Covers:** TR-K3, TR-K4, TR-K9 for the fulfilment context.
-- Deployment (1 replica, as today: one consumer group per partner) with no `HTTPRoute`, so actuator is in-cluster only. Kafka bootstrap points at the Strimzi bootstrap Service. The token endpoint goes through `id.polaris.local`, and the client secret comes from the shared Secret used by the realm import.
+- Deployment (1 replica, as today: one consumer group per partner) with no `HTTPRoute`, so actuator is in-cluster only. Kafka bootstrap points at the Strimzi bootstrap Service. The token endpoint goes through `id.polaris.local`, and the client secret comes from the shared Secret used by the realm import. The client secret is read from Secret `keycloak-realm-placeholders` (never the Compose default), and `POLARIS_FULFILMENT_EMULATOR_SECRET` is added to `.env.template`.
 - Smoke: `tests/e2e/run-fulfilment.sh` runs against the cluster: an order placed through the Gateway reaches `DISPATCHED` → shipped, and one trace continues across Kafka.
 
 ### K11: Hardening: NetworkPolicies, autoscaling, disruption, backups
 **Covers:** TR-K5, TR-K10, D2 (backups).
-- A default-deny NetworkPolicy for the namespace, plus allow rules for exactly the edges in §Topology (including `otel-agent` → Collector, the NGF data plane → Collector, and Collector → kube-apiserver), DNS, and egress to Gemini, TypeSafe and Grafana Cloud.
+- A default-deny NetworkPolicy for the namespace, plus allow rules for exactly the edges in §Topology (including the Keycloak operator → kube-apiserver, the realm-import Job → `keycloak-db`, only the NGF data plane → Keycloak:8080, `otel-agent` → Collector, the NGF data plane → Collector, and Collector → kube-apiserver), DNS, and egress to Gemini, TypeSafe and Grafana Cloud.
 - HPA on CPU for `polaris` and `polaris-assistant` (min 2, max 4 locally). metrics-server installed in kind.
 - Every pod passes Pod Security `restricted`, which the namespace has enforced since K1 (TR-K10).
 - CNPG backups for `polaris-db` and `keycloak-db`: a `ScheduledBackup` plus continuous WAL archiving to an in-cluster S3-compatible object store (pinned upstream chart, credentials from a Secret). Smoke: a backup completes, and a new `Cluster` bootstrapped from it (recovery) contains the smoke row.
@@ -197,7 +197,7 @@ Slices run top to bottom; only the `execute-plan` coordinator edits this table.
 - Optional `overlays/local-lgtm` component: Prometheus, Loki, Tempo and Grafana from upstream charts, configured from the existing files under `docker/telemetry/` (dashboards, SLO rules, datasources). Grafana SSO through the Keycloak master realm, as in Compose. `HTTPRoute` for `grafana.polaris.local`. The K3 Gateway listeners accept routes from the `polaris` namespace only, so Grafana in another namespace needs `allowedRoutes` widened for its listener.
 - The Collector fans out to both the local stack and Grafana Cloud when the component is enabled. NGF parity gaps vs the Compose nginx: no `stub_status` (use NGF's Prometheus metrics on port 9113 instead), no `route`/`sse` access-log fields, and no `url.path` on gateway spans. Dashboards and SLO rules are adjusted for these. Add each new `HTTPRoute` to `base/edge/tracing-policy.yaml` (NGF traces only routes in its `targetRefs`, at most 16).
 - `make test-rules` still passes against the same rule files.
-- `docs/operations/k8s-runbook.md`: bring up, tear down, secrets, image reload, Kafka and Postgres admin, rolling restart, troubleshooting. The root README links it.
+- `docs/operations/k8s-runbook.md`: bring up, tear down, secrets (Keycloak bootstrap admin in `keycloak-initial-admin`; Grafana SSO uses `grafana-admin` with `DEFAULT_PASSWORD`), image reload, Kafka and Postgres admin, rolling restart, troubleshooting. The root README links it.
 
 ## Definition of Done
 
@@ -218,3 +218,4 @@ Slices run top to bottom; only the `execute-plan` coordinator edits this table.
 | 2026-10-07 | K7, K8, K9, K12 add their routes to the NGF tracing policy. K12 accounts for NGF parity gaps (stub_status, route/sse log fields, url.path). TR-K10 records the `observability` namespace as an accepted exception. §Topology and K11 add the otel-agent, gateway and kube-apiserver telemetry edges | Findings from the K4 review | K7, K8, K9, K11, K12 |
 | 2026-10-07 | TR-K3 names operator-generated CNPG credentials as an exception. D2 backups are now delivered: K11 adds CNPG scheduled backups and WAL archiving to an in-cluster object store, with a restore check | Findings from the K5 review | K11 |
 | 2026-10-07 | TR-K6 records Kafka 4.1.1 on Kubernetes as an accepted deviation; Compose moves to 4.1.x in a separate change. K6 documents that there is no host Kafka listener on kind | Findings from the K6 review | K6 |
+| 2026-10-08 | D4/K7: master realm imported by the server at first start; only polaris uses KeycloakRealmImport. K9 seed-shoppers and K12 runbook use the operator bootstrap admin and grafana-admin. K10 reads the emulator secret from keycloak-realm-placeholders and adds it to .env.template. K11 adds Keycloak operator, import Job and NGF→Keycloak edges; TR-K10 records the operator Secret access as accepted | Findings from the K7 review | K7, K9, K10, K11, K12 |
