@@ -36,7 +36,7 @@ application code in `polaris`, `polaris-assistant` or `polaris-fulfilment-emulat
 |:--|:--|:--|:--|:--|
 | D1 | APIM product | **Gravitee APIM CE 4.x** (latest 4.x at A1 start, pinned) | Full APIM role in open source (ADR-0022 §3) | Kong OSS (frozen at 3.9), Azure APIM (paid, cloud only), APISIX (no portal) |
 | D2 | Management storage | **JDBC on a dedicated PostgreSQL 16 container `apim-db`** (CNPG `Cluster` on Kubernetes) | One database per owner, as for `polaris-db` and `keycloak-db`. No MongoDB | MongoDB (Gravitee's default) |
-| D3 | Rate-limit storage | **Existing Redis, logical database 1** | Distributed counters across gateway replicas without a new container | Dedicated Redis (revisit if eviction becomes a problem, see Risks) |
+| D3 | Rate-limit storage | **Dedicated Redis `apim-redis`** (pinned `redis:7-alpine` in the `apim` profile, its own `maxmemory` and an eviction policy that keeps TTL'd counters; a small dedicated Redis on Kubernetes) | Distributed counters across gateway replicas. One store per owner, as in D2. Gravitee's Redis rate-limit repository can't select a logical database (always database 0, verified on 4.12.21) | Existing Redis, database 0, separated only by the `ratelimit:` key prefix (shares eviction pressure with `polaris` cache keys) |
 | D4 | Analytics | **None in Gravitee.** TCP reporter → Collector `tcplog` receiver → Loki | ADR-0022 §4.5 | OpenSearch analytics repository |
 | D5 | Config as code format | **Gravitee Kubernetes Operator CRD documents** (`ApiV4Definition`, `Application`, `ManagementContext`) stored in `deploy/apim/`. On Compose, `apply.sh` sends them to the Management API's CRD import endpoint, the same endpoint the operator calls. On Kubernetes (A9), the operator applies the same files | One format for both environments, no drift between two definitions. To verify in A1: if the import endpoint can't be used outside the operator, fall back to v4 definition JSON for Compose and record the change | Separate JSON for Compose and CRDs for Kubernetes |
 | D6 | Edge | **nginx (Compose) / NGINX Gateway Fabric (Kubernetes) keep terminating TLS** and route `api.`, `developer.` and `apim.polaris.local` to Gravitee | One edge, the same as for all other hosts. The existing `*.polaris.local` certificate already covers the new hosts | Expose Gravitee directly |
@@ -56,7 +56,7 @@ flowchart LR
   portal & console --> mapi[Management API]
   mapi --> adb[(apim-db<br/>PostgreSQL)]
   gw -->|sync| adb
-  gw -->|rate-limit counters| redis[(Redis db 1)]
+  gw -->|rate-limit counters| redis[(apim-redis)]
   gw -->|JWKS| kc[Keycloak]
   gw -->|/catalog/v1| polaris
   gw -->|Northwind SKUs| nw[legacy-northwind<br/>WireMock]
@@ -101,7 +101,7 @@ Slices run top to bottom; only the `execute-plan` coordinator edits this table.
 
 ### A1: Gateway on Compose and the first managed API
 **Covers:** TR-A1, TR-A2, TR-A3, TR-A4, TR-A5 (401/403/404), TR-A7 (traces only), D1, D2, D3, D5, D6, D8.
-- Compose profile `apim`: Gravitee gateway, management API and console at pinned versions, plus `apim-db` (PostgreSQL 16). Management repository on JDBC, rate-limit repository on Redis database 1. **Analytics repository off**: confirm the chosen version starts and runs with it off. If it can't, stop and mark the slice `blocked` (ADR-0022 Risks).
+- Compose profile `apim`: Gravitee gateway, management API and console at pinned versions, plus `apim-db` (PostgreSQL 16). Management repository on JDBC, rate-limit repository on a dedicated `apim-redis` (D3). **Analytics repository off**: confirm the chosen version starts and runs with it off. If it can't, stop and mark the slice `blocked` (ADR-0022 Risks).
 - nginx: server blocks for `api.polaris.local` (to the gateway) and `apim.polaris.local` (to the console and management API). `api.polaris.local` and `apim.polaris.local` are added to `DOMAINS` in `scripts/setup-local-https-mac-m1.sh` and to the nginx network aliases.
 - Keycloak `polaris` realm: a confidential client `partner-acme` (client credentials only) with the catalog read permissions that `polaris` checks. The secret comes from `.env` (`APIM_PARTNER_ACME_SECRET`, added to `.env.template`).
 - `deploy/apim/openapi/catalog-v1.yaml` (list products, get product by SKU, list categories) and an `ApiV4Definition` for `/catalog/v1` with a JWT plan validated against Keycloak's JWKS. The consumer's token is forwarded to `polaris` unchanged, so `polaris` authorises with its own permission checks.
@@ -130,7 +130,7 @@ Slices run top to bottom; only the `execute-plan` coordinator edits this table.
 ### A4: Plans, rate limits and quotas
 **Covers:** TR-A5 (429), D3.
 - Three plans on the catalog API: Free (10 req/s, 1 000 per day), Partner (50 req/s, 100 000 per day), Premium (200 req/s, no daily quota). `partner-acme` on Partner, a new `partner-initech` on Free.
-- Counters in Redis, so limits hold across two gateway replicas (the Compose profile runs two).
+- Counters in `apim-redis`, so limits hold across two gateway replicas (the Compose profile runs two).
 - 429 problem+json with `Retry-After`, and `RateLimit-Policy` / `RateLimit` headers on every response.
 - k6 test `tests/apim/k6/plans.js`: Free is throttled at its limit across both replicas, and Partner isn't throttled at the same load. The A3 dashboard shows 429s per plan and application.
 - Smoke: a short burst over the Free limit gets 429 with `Retry-After`.
@@ -170,7 +170,7 @@ Slices run top to bottom; only the `execute-plan` coordinator edits this table.
 ### A9: APIM on Kubernetes
 **Covers:** TR-A1, TR-A2, TR-A7, TR-A8 on the kind cluster; D2, D5.
 - Gravitee from the upstream Helm chart at a pinned version, as an optional component (`overlays/local-apim`), with the Gravitee Kubernetes Operator. Pods pass Pod Security `restricted`.
-- CNPG `Cluster` `apim-db`. Rate limits on the in-cluster Redis, database 1.
+- CNPG `Cluster` `apim-db`. Rate limits on a small dedicated in-cluster Redis for the APIM (D3).
 - The `deploy/apim/` documents are applied by the operator, unchanged from Compose (D5). A `ManagementContext` points the operator at the management API.
 - `HTTPRoute`s for `api.`, `developer.` and `apim.polaris.local`, added to `base/edge/tracing-policy.yaml` (at most 16 routes there). The K3 certificate gains the three hosts.
 - `legacy-northwind` as a Deployment with its mappings from a ConfigMap.
@@ -191,7 +191,7 @@ Slices run top to bottom; only the `execute-plan` coordinator edits this table.
 
 - **Analytics repository can't be turned off** in the chosen Gravitee version. Checked first in A1. If so, the plan stops and ADR-0022 is revisited.
 - **CE feature gaps.** Some policies (circuit breaker, some transformations) may be Enterprise-only. Each slice checks its policies first and records any substitute in the ADR.
-- **Rate-limit counters evicted from Redis.** Redis runs with `maxmemory 200mb` and `volatile-lru`. Counters have TTLs, so under memory pressure they can be evicted and consumers get more than their quota. Acceptable for a lab. Move to a dedicated Redis if A4's tests show it.
+- **Rate-limit counters evicted from `apim-redis`.** Counters have TTLs, so if `apim-redis` hits its `maxmemory` they can be evicted and consumers get more than their quota. It holds nothing else, so size it for the counters and check it in A4's tests.
 - **Heavier local stack.** Four Gravitee containers plus `apim-db` and WireMock. That's why the profile is optional.
 
 ## Change Log
@@ -199,3 +199,4 @@ Slices run top to bottom; only the `execute-plan` coordinator edits this table.
 | Date | Change | Reason | Slices affected |
 |:--|:--|:--|:--|
 | 2026-10-08 | Plan created | ADR-0022 proposed | All |
+| 2026-10-08 | D3: rate-limit counters move from the existing Redis (database 1) to a dedicated `apim-redis` | Gravitee 4.12.21's Redis rate-limit repository can't select a logical database (found in A1) | A1, A4, A9 |

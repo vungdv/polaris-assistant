@@ -90,7 +90,7 @@ consumer ──HTTPS──▶ edge (nginx / NGINX Gateway Fabric) ──▶ Grav
 * **`polaris.local` is unchanged.** The first-party web client, MCP and the assistant keep the direct routes from ADR-0009. This keeps the distinction enterprises make between their own channels and the managed external API product.
 * **Developer portal** at `developer.polaris.local`. **Management console** at `apim.polaris.local`, signed in through Keycloak OIDC.
 * **Identity stays in Keycloak.** Consumer applications are Keycloak confidential clients using the client credentials grant. Gravitee JWT plans validate tokens against `https://id.polaris.local/realms/polaris/protocol/openid-connect/certs`. The APIM never issues its own tokens.
-* **Storage reuses what the stack already runs.** The management repository uses the JDBC (PostgreSQL) backend in its own database, and distributed rate limiting uses the existing Redis.
+* **Storage reuses what the stack already runs.** The management repository uses the JDBC (PostgreSQL) backend in its own database, and distributed rate limiting uses a dedicated Redis for the APIM (Gravitee's Redis rate-limit repository can't select a logical database in the shared Redis).
 * **Observability goes through the existing Grafana stack, not a Gravitee analytics store.** Gravitee's built-in analytics read from Elasticsearch or OpenSearch. We don't run either. Instead (section 4.5):
   * **Per-request records:** the gateway's TCP reporter sends one JSON record per call (API, plan, application, subscription, status, latency, `trace_id`) to the OTel Collector, which forwards it to Loki.
   * **Metrics:** the Collector scrapes the gateway's Prometheus endpoint.
