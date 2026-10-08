@@ -101,7 +101,7 @@ Slices run top to bottom; only the `execute-plan` coordinator edits this table.
 | 4 | K4 | Observability pipeline | `done` | — | `k8s/k4-observability` | [#7](https://github.com/vungdv/polaris-assistant/pull/7) | Merged 8bfee4c |
 | 5 | K5 | Data stores: PostgreSQL and Redis | `done` | — | `k8s/k5-data-stores` | [#9](https://github.com/vungdv/polaris-assistant/pull/9) | Merged 19f4d2e |
 | 6 | K6 | Kafka cluster | `done` | — | `k8s/k6-kafka` | [#10](https://github.com/vungdv/polaris-assistant/pull/10) | Merged e399b54 |
-| 7 | K7 | Identity: Keycloak | `in-progress` | — | | | |
+| 7 | K7 | Identity: Keycloak | `in-review` | — | `k8s/k7-keycloak` | [#13](https://github.com/vungdv/polaris-assistant/pull/13) | |
 | 8 | K8 | Order & Catalog (`polaris`) and Swagger UI | `todo` | — | | | |
 | 9 | K9 | Assistant (`polaris-assistant`) | `todo` | Gemini and TypeSafe API keys available to CI as secrets | | | |
 | 10 | K10 | Fulfilment (`polaris-fulfilment-emulator`) | `todo` | — | | | |
