@@ -87,7 +87,7 @@ Slices run top to bottom; only the `execute-plan` coordinator edits this table.
 
 | # | Slice | Title | Status | External | Branch | PR | Notes |
 |:--|:--|:--|:--|:--|:--|:--|:--|
-| 1 | A1 | Gateway on Compose and the first managed API | `blocked` | ADR-0022 reviewed | feat/apim-a1-gateway-compose |  | D3 not configurable: Gravitee 4.12.21 Redis rate-limit repo has no logical-database setting; plan change pending |
+| 1 | A1 | Gateway on Compose and the first managed API | `in-progress` | ADR-0022 reviewed |  |  |  |
 | 2 | A2 | Developer portal, applications and subscriptions | `todo` | — | | | |
 | 3 | A3 | Consumer analytics in Grafana | `todo` | — | | | |
 | 4 | A4 | Plans, rate limits and quotas | `todo` | — | | | |
