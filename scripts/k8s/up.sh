@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Creates the local kind cluster (if it doesn't exist yet), installs the platform components (platform.sh) and
-# applies the local overlay, then waits for the edge, the data stores and Kafka to be ready. Safe to re-run.
+# applies the local overlay, then waits for the edge, the data stores, Kafka and Keycloak to be ready. Safe to re-run.
 set -euo pipefail
 # shellcheck source=SCRIPTDIR/lib.sh
 source "$(dirname "$0")/lib.sh"
@@ -20,7 +20,33 @@ fi
 
 "$REPO_ROOT/scripts/k8s/platform.sh"
 
+# Realm placeholders (K7): DEFAULT_PASSWORD and POLARIS_FULFILMENT_EMULATOR_SECRET, the keys Compose substitutes into
+# docker/keycloak/*.json. Each comes from the untracked env file when it sets it. Otherwise (CI, or a key left empty)
+# the value already in the Secret is kept, and only a missing one is generated at random, so re-runs never change it:
+# the realms are imported once, into an empty database, like Compose's --import-realm, and keep their first values.
+# printf is a shell builtin, so the values never appear in a process's arguments.
+apply_realm_secret() {
+  local key value values="" generated=()
+  kctl apply -f "$K8S_DIR/base/namespace.yaml" >/dev/null
+  for key in DEFAULT_PASSWORD POLARIS_FULFILMENT_EMULATOR_SECRET; do
+    value="$(env_value "$key")"
+    [ -n "$value" ] || value="$(kctl -n "$K8S_NAMESPACE" get secret "$KEYCLOAK_REALM_SECRET" \
+      -o jsonpath="{.data.$key}" 2>/dev/null | base64 -d 2>/dev/null || true)"
+    if [ -z "$value" ]; then
+      value="$(od -An -N24 -tx1 /dev/urandom | tr -d ' \n')"
+      generated+=("$key")
+    fi
+    values+="$key=$value"$'\n'
+  done
+  [ "${#generated[@]}" -eq 0 ] ||
+    log "generated ${generated[*]} at random (not set in ${K8S_ENV_FILE#"$REPO_ROOT"/}); read it from Secret $KEYCLOAK_REALM_SECRET"
+  kctl -n "$K8S_NAMESPACE" create secret generic "$KEYCLOAK_REALM_SECRET" --from-env-file=<(printf '%s' "$values") \
+    --dry-run=client -o yaml | kctl apply -f - >/dev/null
+}
+apply_realm_secret
+
 write_image_pins
+write_realm_imports
 log "applying ${K8S_OVERLAY#"$REPO_ROOT"/} (app images pinned to $IMAGE_TAG)"
 # CloudNativePG's admission webhooks can refuse the Clusters for a few seconds after the operator is Ready, until its
 # self-generated serving certificate is in the webhook configurations.
@@ -48,5 +74,18 @@ kctl -n "$K8S_NAMESPACE" rollout status "deployment/$REDIS" --timeout="$K8S_WAIT
 # Kafka (K6): the operator reports the Kafka Ready once every node is running and the listeners are up.
 log "waiting for the Kafka cluster $KAFKA_CLUSTER"
 kctl -n "$K8S_NAMESPACE" wait --for=condition=Ready "kafka.kafka.strimzi.io/$KAFKA_CLUSTER" \
+  --timeout="$K8S_WAIT_TIMEOUT" >/dev/null
+
+# Keycloak (K7): the server is ready, the polaris realm import Job is done, and the rolling restart the operator starts
+# after an import has finished. On the first run the server also builds itself and imports the master realm.
+log "waiting for Keycloak and the realm imports (${KEYCLOAK_REALM_IMPORTS[*]})"
+kctl -n "$K8S_NAMESPACE" wait --for=condition=Ready "keycloak.k8s.keycloak.org/$KEYCLOAK" \
+  --timeout="$K8S_WAIT_TIMEOUT" >/dev/null
+for realm in "${KEYCLOAK_REALM_IMPORTS[@]}"; do
+  kctl -n "$K8S_NAMESPACE" wait --for=condition=Done "keycloakrealmimport.k8s.keycloak.org/$realm" \
+    --timeout="$K8S_WAIT_TIMEOUT" >/dev/null
+done
+kctl -n "$K8S_NAMESPACE" rollout status "statefulset/$KEYCLOAK" --timeout="$K8S_WAIT_TIMEOUT" >/dev/null
+kctl -n "$K8S_NAMESPACE" wait --for=condition=Ready "keycloak.k8s.keycloak.org/$KEYCLOAK" \
   --timeout="$K8S_WAIT_TIMEOUT" >/dev/null
 log "cluster '$KIND_CLUSTER_NAME' is up (context $KUBE_CONTEXT)"

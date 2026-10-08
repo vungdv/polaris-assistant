@@ -5,7 +5,8 @@
 #   the Gateway API CRDs, NGINX Gateway Fabric and the CoreDNS rewrite of *.polaris.local (K3);
 #   the OpenTelemetry Collector and its log agent (K4);
 #   the CloudNativePG operator (K5);
-#   the Strimzi cluster operator (K6).
+#   the Strimzi cluster operator (K6);
+#   the Keycloak Operator and its CRDs (K7).
 # Each step waits for readiness with a bounded timeout (K8S_WAIT_TIMEOUT). Safe to re-run. Called by up.sh.
 set -euo pipefail
 # shellcheck source=SCRIPTDIR/lib.sh
@@ -66,10 +67,6 @@ install_coredns_rewrite() {
   esac
 }
 
-# env_value <key>: the value of `<key>=<value>` in the untracked env file (the last one wins), or nothing. The file is
-# read as data, never sourced.
-env_value() { if [ -f "$K8S_ENV_FILE" ]; then sed -n "s/^$1=//p" "$K8S_ENV_FILE" | tail -n 1; fi; }
-
 # The Collector runs in the app namespace, which must exist with its Pod Security labels before the Collector's pod is
 # admitted. Grafana Cloud export (D8) is on only when the env file has all three GRAFANA_CLOUD_* credentials: they go
 # to the Secret `grafana-cloud` and grafana-cloud.values.yaml adds the exporter. Without them (CI, or an unedited copy
@@ -120,6 +117,19 @@ install_strimzi() {
     --values "$PLATFORM_DIR/strimzi/values.yaml"
 }
 
+# The Keycloak Operator from its upstream release manifests (platform/keycloak-operator, staged with the downloaded
+# and checksum-verified files). Server-side apply: the Keycloak CRD is too large for client-side apply's annotation.
+# The operator runs in the app namespace (see the kustomization), which must exist with its Pod Security labels first.
+install_keycloak_operator() {
+  log "installing the Keycloak Operator $KEYCLOAK_VERSION into namespace $K8S_NAMESPACE"
+  stage_keycloak_operator "$tmp/keycloak-operator"
+  kctl apply -f "$K8S_DIR/base/namespace.yaml" >/dev/null
+  kctl apply --server-side --force-conflicts -k "$tmp/keycloak-operator" >/dev/null
+  kctl wait --for=condition=Established --timeout="$K8S_WAIT_TIMEOUT" \
+    crd/keycloaks.k8s.keycloak.org crd/keycloakrealmimports.k8s.keycloak.org >/dev/null
+  kctl -n "$K8S_NAMESPACE" rollout status "deployment/$KEYCLOAK_OPERATOR" --timeout="$K8S_WAIT_TIMEOUT" >/dev/null
+}
+
 helm_install cert-manager cert-manager "$CERT_MANAGER_CHART" "$CERT_MANAGER_VERSION" \
   --values "$PLATFORM_DIR/cert-manager/values.yaml"
 helm_install trust-manager cert-manager "$TRUST_MANAGER_CHART" "$TRUST_MANAGER_VERSION" \
@@ -134,4 +144,5 @@ install_otel_agent
 helm_install "$CNPG_RELEASE" "$CNPG_NAMESPACE" "$CNPG_CHART" "$CNPG_VERSION" \
   --values "$PLATFORM_DIR/cloudnative-pg/values.yaml"
 install_strimzi
+install_keycloak_operator
 log "platform components ready"

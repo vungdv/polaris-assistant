@@ -2,7 +2,7 @@
 # Renders every overlay and every platform kustomization (deploy/k8s/platform/*/) with `kubectl kustomize` and
 # validates the output with kubeconform in strict mode, against the schemas of the pinned Kubernetes version plus the
 # pinned CRDs catalog for custom resources (cert-manager, trust-manager, Gateway API, NGINX Gateway Fabric, CloudNativePG,
-# Strimzi).
+# Strimzi, Keycloak).
 # The Helm values of each platform component are rendered against their pinned chart. Needs no cluster.
 set -euo pipefail
 # shellcheck source=SCRIPTDIR/lib.sh
@@ -13,12 +13,22 @@ ensure_tools kubectl kubeconform helm
 k8s_schemas="https://raw.githubusercontent.com/yannh/kubernetes-json-schema/$K8S_SCHEMAS_REF/{{.NormalizedKubernetesVersion}}-standalone{{.StrictSuffix}}/{{.ResourceKind}}{{.KindSuffix}}.json"
 crds_catalog="https://raw.githubusercontent.com/datreeio/CRDs-catalog/$CRDS_CATALOG_REF/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json"
 
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
 write_image_pins
+write_realm_imports
 for dir in "$K8S_DIR"/overlays/*/ "$K8S_DIR"/platform/*/; do
   [ -f "${dir}kustomization.yaml" ] || continue # Helm values directories have no kustomization
   log "validating ${dir#"$REPO_ROOT"/}"
-  kubectl kustomize "$dir" |
-    kubeconform -strict -summary -kubernetes-version "$KUBERNETES_VERSION" \
+  src="$dir"
+  # The Keycloak Operator's kustomization needs its upstream manifests next to it (downloaded and verified).
+  if [ "${dir%/}" = "$PLATFORM_DIR/keycloak-operator" ]; then
+    src="$tmp/keycloak-operator"
+    stage_keycloak_operator "$src"
+  fi
+  # CustomResourceDefinitions (the Keycloak Operator's) come unchanged from upstream and have no strict schema.
+  kubectl kustomize "$src" |
+    kubeconform -strict -summary -skip CustomResourceDefinition -kubernetes-version "$KUBERNETES_VERSION" \
       -schema-location "$k8s_schemas" -schema-location "$crds_catalog"
 done
 

@@ -1,0 +1,28 @@
+# Pod Security `restricted` for the operator's pod (upstream sets no securityContext). The image runs as the numeric
+# UID 1000, so runAsNonRoot can verify it. The root filesystem is read-only; Quarkus/Vert.x get a writable /tmp.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keycloak-operator
+spec:
+  template:
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: keycloak-operator
+          # The tag is the pinned release; no need to pull it on every restart.
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}

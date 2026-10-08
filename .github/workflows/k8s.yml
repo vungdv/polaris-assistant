@@ -56,6 +56,10 @@ jobs:
         .tools/bin/kubectl --kubeconfig .tools/kubeconfig --context kind-polaris -n polaris get kafkas.kafka.strimzi.io,kafkanodepools.kafka.strimzi.io,pods -l strimzi.io/cluster=kafka -o wide || true
         .tools/bin/kubectl --kubeconfig .tools/kubeconfig --context kind-polaris -n polaris describe kafkas.kafka.strimzi.io,kafkanodepools.kafka.strimzi.io || true
         .tools/bin/kubectl --kubeconfig .tools/kubeconfig --context kind-polaris -n strimzi logs deployment/strimzi-cluster-operator --tail=200 || true
+        .tools/bin/kubectl --kubeconfig .tools/kubeconfig --context kind-polaris -n polaris get keycloaks.k8s.keycloak.org,keycloakrealmimports.k8s.keycloak.org,statefulsets,jobs -o wide || true
+        .tools/bin/kubectl --kubeconfig .tools/kubeconfig --context kind-polaris -n polaris describe keycloaks.k8s.keycloak.org,keycloakrealmimports.k8s.keycloak.org || true
+        .tools/bin/kubectl --kubeconfig .tools/kubeconfig --context kind-polaris -n polaris logs deployment/keycloak-operator --tail=200 || true
+        .tools/bin/kubectl --kubeconfig .tools/kubeconfig --context kind-polaris -n polaris logs statefulset/keycloak --tail=200 || true
         .tools/bin/kind export logs --name polaris "${RUNNER_TEMP}/kind-logs" || true
     - name: Upload kind logs
       if: failure()
