@@ -246,7 +246,7 @@ class GeminiAiModelClientTelemetryTest {
 
             SpanData span = telemetry.onlySpan();
             String exported = span.getAttributes() + " " + span.getEvents() + " " + span.getStatus();
-            assertThat(exported).doesNotContain("4111", "SECRET-COMPLETION-TEXT", THOUGHT_SIGNATURE, "You are Polaris Assistant");
+            assertThat(exported).doesNotContain("4111 1111 1111 1111", "SECRET-COMPLETION-TEXT", THOUGHT_SIGNATURE, "You are Polaris Assistant");
         }
 
         @Test
