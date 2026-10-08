@@ -56,6 +56,9 @@ export KUBECONFIG="$K8S_KUBECONFIG"
   KEYCLOAK_REALM_IMPORTS=(polaris-realm)
   REALM_DIR="$REPO_ROOT/docker/keycloak"
   REALM_COMPONENT="$K8S_DIR/overlays/local/realms"
+  # Order & Catalog (K8): Deployment, Service and HTTPRoutes `polaris` (base/polaris), and Swagger UI (base/swagger-ui).
+  POLARIS=polaris
+  SWAGGER_UI=swagger-ui
 }
 # kafka_pod <node id>: the pod name of a Kafka node.
 kafka_pod() { printf '%s-%s-%s' "$KAFKA_CLUSTER" "$KAFKA_NODE_POOL" "$1"; }
@@ -119,6 +122,9 @@ IMAGE_TAG="${IMAGE_TAG:-$(git -C "$REPO_ROOT" rev-parse HEAD)}"
 IMAGE_PINS="$K8S_DIR/overlays/local/images/kustomization.yaml"
 
 app_image() { printf '%s/%s:%s' "$IMAGE_REGISTRY" "$1" "$IMAGE_TAG"; }
+
+# image_loaded <image>: whether the kind node already holds the image (loaded by `make k8s-images`).
+image_loaded() { docker exec "$KIND_CLUSTER_NAME-control-plane" crictl inspecti "$1" >/dev/null 2>&1; }
 
 # Writes the untracked Kustomize component that pins the local overlay's app images to IMAGE_TAG (the git SHA), so the
 # tag follows the checkout without a committed value to bump on every commit. Base manifests name each image by its

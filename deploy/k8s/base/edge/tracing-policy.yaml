@@ -16,6 +16,15 @@ spec:
     - group: gateway.networking.k8s.io
       kind: HTTPRoute
       name: keycloak
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: polaris
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: polaris-mcp
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: swagger-ui
   tracing:
     strategy: ratio
     ratio: 100

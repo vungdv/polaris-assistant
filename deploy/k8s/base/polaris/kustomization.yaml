@@ -1,0 +1,13 @@
+# Order & Catalog (K8): the `polaris` Deployment (2 replicas), its Service, ConfigMap, PodDisruptionBudget and
+# HTTPRoutes. Needs what earlier slices deploy: the CNPG Secret polaris-db-app (K5), Redis (K5), the Kafka bootstrap
+# Service (K6), Keycloak behind id.polaris.local (K7), the trust bundle polaris-ca-bundle and the Gateway (K3), and the
+# Collector (K4). The image is named `polaris`; overlays pin it to ghcr.io/<owner>/polaris:<git-sha> (K2).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: polaris
+resources:
+  - configmap.yaml
+  - deployment.yaml
+  - service.yaml
+  - pdb.yaml
+  - httproute.yaml

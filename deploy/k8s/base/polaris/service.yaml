@@ -1,0 +1,16 @@
+# In-cluster address of polaris (the Gateway routes, and from K9/K10 the assistant's MCP and REST calls and the
+# emulator's claim calls): http://polaris:8080, as on Compose's network.
+apiVersion: v1
+kind: Service
+metadata:
+  name: polaris
+  labels:
+    app.kubernetes.io/name: polaris
+    app.kubernetes.io/part-of: polaris
+spec:
+  selector:
+    app.kubernetes.io/name: polaris
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

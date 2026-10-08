@@ -1,0 +1,37 @@
+# https://polaris.local/swagger-ui -> Swagger UI (K8), as Compose's nginx:
+#   - `location /swagger-ui`          -> the swagger-ui Service (it serves under BASE_URL /swagger-ui),
+#   - `location = /swagger-ui.html`   -> 301 to /swagger-ui/index.html.
+# PathPrefix matches whole path segments, so /swagger-ui.html doesn't fall under /swagger-ui. Traced
+# (base/edge/tracing-policy.yaml).
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: swagger-ui
+  labels:
+    app.kubernetes.io/name: swagger-ui
+    app.kubernetes.io/part-of: polaris
+spec:
+  parentRefs:
+    - name: polaris
+      sectionName: https-polaris
+  hostnames:
+    - polaris.local
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /swagger-ui
+      backendRefs:
+        - name: swagger-ui
+          port: 8080
+    - matches:
+        - path:
+            type: Exact
+            value: /swagger-ui.html
+      filters:
+        - type: RequestRedirect
+          requestRedirect:
+            path:
+              type: ReplaceFullPath
+              replaceFullPath: /swagger-ui/index.html
+            statusCode: 301
