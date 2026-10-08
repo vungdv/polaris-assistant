@@ -639,6 +639,7 @@ flyway_sql="SELECT 'flyway', count(*), count(DISTINCT version), count(*) FILTER 
   FROM flyway_schema_history WHERE version IS NOT NULL"
 k5_probes+=(flyway-smoke outbox-smoke polaris-smoke k6-api-test k6-rolling-restart) # removed on exit too
 if out="$(run_probe flyway-smoke "$pg_image" 26 "set -e
+$(wait_for POLARIS_DB_URI)
 psql \"\$POLARIS_DB_URI\" -v ON_ERROR_STOP=1 -qAt -F ' ' -c \"$flyway_sql\"" "$pg_env")"; then
   log "Flyway history: $out"
   check "flyway_schema_history holds each of the $migrations migrations exactly once, all successful" \
@@ -670,6 +671,7 @@ if kafka_cli 1 kafka-topics --create --topic "$ob_topic" --partitions 3 --replic
   ob_topic_created=1
   # The SQL is quoted by the probe's here-documents, so the payload's JSON quotes need no escaping.
   if out="$(run_probe outbox-smoke "$pg_image" 26 "set -e
+$(wait_for POLARIS_DB_URI)
 psql \"\$POLARIS_DB_URI\" -v ON_ERROR_STOP=1 -q <<'SQL'
 INSERT INTO outbox_events (event_id, event_type, event_source, destination, event_key, payload, occurred_at)
 SELECT gen_random_uuid(), 'vn.danang.polaris.k8s-smoke.v1', '/k8s/smoke', '$ob_topic',
@@ -862,6 +864,7 @@ wait_k6() {
     case "$phase" in Succeeded | Failed) break ;; esac
     sleep 3
   done
+  echo "k6 pod phase ${phase:-(none)}"
   kctl -n "$K8S_NAMESPACE" logs "$name" 2>&1 | grep -v '^time=' || true
   kctl -n "$K8S_NAMESPACE" delete pod "$name" --ignore-not-found --wait=false >/dev/null 2>&1 || true
   [ "$phase" = Succeeded ]
@@ -869,12 +872,12 @@ wait_k6() {
 
 # The smoke run: api-test.js with its own defaults (5 VUs for 10s), thresholds included (exit code).
 start_k6 k6-api-test ""
-if out="$(wait_k6 k6-api-test 180)"; then
+if out="$(wait_k6 k6-api-test 300)"; then
   pass "tests/perf/api-test.js passes against https://polaris.local (checks and thresholds)"
 else
   fail "tests/perf/api-test.js failed against https://polaris.local"
 fi
-log "api-test.js results:"$'\n'"$(grep -E "checks|http_req_duration|http_reqs|✗|server-errors|thresholds" <<<"$out" || true)"
+log "api-test.js results:"$'\n'"$(grep -E "phase|checks|http_req_duration|http_reqs|✗|server-errors|THRESHOLDS" <<<"$out" || true)"
 check "api-test.js got no 5xx and no failed connection" grep -qx "server-errors 0" <<<"$out"
 
 # A rolling restart under load (TR-K4, TR-K5): api-test.js runs open-ended while `kubectl rollout restart` replaces

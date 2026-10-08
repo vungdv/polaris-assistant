@@ -25,6 +25,10 @@ spec:
       encoding: UTF8
       localeCollate: en_US.utf8
       localeCType: en_US.utf8
+  # A smart shutdown waits for every client to disconnect, and the apps' connection pools (K8, K9) never do, so a
+  # restarted instance would hang for the 180s default before CNPG's fast shutdown. 15s lets in-flight transactions
+  # finish; the apps reconnect to the new primary through polaris-db-rw.
+  smartShutdownTimeout: 15
   # The volume comes from the cluster's default StorageClass.
   storage:
     size: 2Gi
