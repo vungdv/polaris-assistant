@@ -1,0 +1,9 @@
+# Swagger UI (K8): Deployment, Service, ConfigMap and the /swagger-ui HTTPRoute on the K3 Gateway.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: polaris
+resources:
+  - configmap.yaml
+  - deployment.yaml
+  - service.yaml
+  - httproute.yaml

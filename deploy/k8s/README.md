@@ -7,14 +7,14 @@ Manifests and tooling for running Polaris on Kubernetes ([ADR-0021](../../docs/t
 | `versions.env` | Pinned versions of kind, its node image, kubectl, kubeconform, helm, the schema catalogs and the platform charts |
 | `kind/cluster.yaml` | Local kind cluster: host ports 80/443 → NodePorts 30080/30443 |
 | `platform/` | Helm values and CRs for third-party components: cert-manager, trust-manager, NGINX Gateway Fabric, the cluster PKI (`pki/`), the CoreDNS rewrite (`coredns/`), the OpenTelemetry Collector (`otel-collector/`) and its log agent (`otel-agent/`), the CloudNativePG operator (`cloudnative-pg/`), the Strimzi operator (`strimzi/`), the Keycloak Operator (`keycloak-operator/`: patches over its upstream release manifests) |
-| `base/` | Cluster-agnostic manifests: the `polaris` namespace (Pod Security `restricted`), then one directory per component (`edge/`: Gateway, certificate, HTTP redirect, tracing policy; `data/`: PostgreSQL Clusters; `redis/`; `kafka/`: the Kafka cluster; `keycloak/`: the Keycloak server and its HTTPRoute) |
+| `base/` | Cluster-agnostic manifests: the `polaris` namespace (Pod Security `restricted`), then one directory per component (`edge/`: Gateway, certificate, HTTP redirect, tracing policy; `data/`: PostgreSQL Clusters; `redis/`; `kafka/`: the Kafka cluster; `keycloak/`: the Keycloak server and its HTTPRoute; `polaris/`: the Order & Catalog service and its HTTPRoutes; `swagger-ui/`) |
 | `overlays/local/` | The kind environment: image tags, replica counts, Secrets from the untracked `deploy/k8s/.env.local` |
 | `overlays/local/realms/` | Generated and untracked: the Kustomize component that imports `docker/keycloak/*.json` (KeycloakRealmImport `polaris-realm`, ConfigMap `keycloak-master-realm`) |
 | `overlays/local/images/` | Generated and untracked: the Kustomize component that pins each app image to `ghcr.io/<owner>/<app>:<git-sha>` of the current checkout |
 
 | Command | What it does |
 |:--|:--|
-| `make k8s-up` | Installs the pinned tools into `.tools/bin`, creates the kind cluster `polaris` if missing, installs the platform components (`scripts/k8s/platform.sh`), applies `overlays/local` and waits for the edge |
+| `make k8s-up` | Installs the pinned tools into `.tools/bin`, creates the kind cluster `polaris` if missing, installs the platform components (`scripts/k8s/platform.sh`), applies `overlays/local` and waits for the edge, the data stores, Kafka, Keycloak and the apps whose images are loaded |
 | `make k8s-images` | Builds the three app images as `ghcr.io/vungdv/<app>:<git-sha>` and loads them into the cluster with `kind load docker-image` (`APPS=polaris` for a subset) |
 | `make k8s-smoke` | Runs `scripts/k8s/smoke.sh` against the cluster |
 | `make k8s-down` | Deletes the cluster |
@@ -245,3 +245,53 @@ operator's post-import restart has finished.
 - **Validation.** kubeconform validates the `Keycloak` and `KeycloakRealmImport` against the pinned CRDs catalog.
   Its `v2alpha1` schemas come from a newer Keycloak, and their spec is a strict superset of 26.2.5's. The API server
   validates the CRs strictly against the installed 26.2.5 CRDs on every apply (see `versions.env`).
+
+## Order & Catalog (`polaris`) and Swagger UI
+
+`base/polaris/` runs Compose's `polaris` service, and `base/swagger-ui/` its `swagger-ui`, behind the Gateway on
+`https://polaris.local`.
+
+| Compose | Kubernetes |
+|:--|:--|
+| `polaris` container, `environment:` | Deployment `polaris` (2 replicas), ConfigMap `polaris` (`envFrom`), Service `polaris:8080` |
+| `SPRING_DATASOURCE_USERNAME`/`PASSWORD` `polaris`/`polaris` | `secretKeyRef` to the CNPG Secret `polaris-db-app` (operator-generated, TR-K3); URL `jdbc:postgresql://polaris-db-rw:5432/polaris` |
+| `SPRING_JPA_SHOW-SQL: true`, `LOGGING_LEVEL_ORG_HIBERNATE_ORM_JDBC_BIND: DEBUG` | Dropped (dev-only). `SPRING_JPA_SHOW_SQL=false`, because `application.yml` defaults it to true |
+| `kafka-1..3:9092`, `redis`, `otel-collector:4318` | `kafka-kafka-bootstrap:9092`, `redis:6379`, `otel-collector:4318` |
+| `JAVA_TOOL_OPTIONS=-Djavax.net.ssl.trustStore=/certs/truststore.jks` (hand-copied JKS) | The same property on `/etc/polaris-trust/truststore.jks`, the trust-manager bundle `polaris-ca-bundle` mounted read-only |
+| `user: root` | UID/GID 10001, read-only root filesystem, `emptyDir` on `/tmp`, no capabilities, seccomp `RuntimeDefault` |
+| nginx `location /` and `location /mcp/` (`proxy_buffering off`) | HTTPRoutes `polaris` (`/`) and `polaris-mcp` (`/mcp/`), plus the NGF `ProxySettingsPolicy` `polaris-mcp-sse` (buffering off, 1h read and send timeouts) |
+| `swagger-ui` (root), nginx `location /swagger-ui` and `= /swagger-ui.html` | Deployment, Service and ConfigMap `swagger-ui` (same image and `URLS`/`BASE_URL`/`OAUTH_*`), as UID 101 with a read-only root filesystem (an init container copies what the entrypoint rewrites into `emptyDir`s); HTTPRoute `swagger-ui` with `/swagger-ui` and a 301 for `/swagger-ui.html` |
+
+- **Image.** The Deployment uses `image: polaris`, pinned by the generated `images` component. On a fresh cluster
+  the image isn't on the node yet, so the pods wait in an image-pull back-off and `make k8s-up` only logs a hint. Run
+  `make k8s-images APPS=polaris` (it builds the image, loads it with `kind load`, and replaces the waiting pods so
+  both replicas start together), then `make k8s-up` again, which waits for the rollout. CI does the same.
+- **Lifecycle (TR-K4).** A `startupProbe` on `/actuator/health/liveness` allows up to 5 minutes for Flyway and the
+  context. Then liveness and readiness (`readinessState` + `db`) take over. On termination a 10s `preStop` sleep lets the Gateway
+  drop the endpoint before SIGTERM starts the graceful shutdown (20s phase timeout, K2).
+  `terminationGracePeriodSeconds` is 40 (10 + 20 + 10s margin). Requests 250m CPU and 384Mi, limits 2 CPUs and 1Gi; the
+  heap is 70% of the limit.
+- **Multiple replicas (TR-K5).** Rolling updates keep both replicas (`maxUnavailable: 0`, `maxSurge: 1`), and the
+  PodDisruptionBudget `polaris` (`minAvailable: 1`) lets a drain evict one at a time. Flyway's advisory lock and the
+  outbox relay's per-key lease keep migrations and event hand-off correct with both running.
+- **Telemetry (TR-K9).** OTLP traces, metrics and logs go to the Collector, whose `k8s_attributes` processor adds
+  `k8s.namespace.name`, `k8s.pod.name` and `k8s.deployment.name`. The pod's UID is set as `OTEL_RESOURCE_ATTRIBUTES`
+  (downward API), so the Collector matches the pod by UID. All three routes are in `base/edge/tracing-policy.yaml`,
+  so the Gateway's span is the parent of polaris's server span.
+- **Smoke.** `make k8s-smoke` checks the following:
+  - 2/2 replicas are ready, the PDB is in place, and the routes and the SSE policy are accepted.
+  - Flyway history: each of the repo's migrations is applied once and successfully.
+  - The E3 two-instance check on the cluster. It inserts 60 outbox events for 6 keys in one transaction, with a fresh
+    test topic as their destination. Both replicas' relays then compete to deliver them, and the check expects all
+    60 marked delivered, each on Kafka exactly once, and each key's events in commit order.
+  - From a `restricted` pod, through the Gateway:
+    - a token for `testuser`, then a catalogue call whose `X-Trace-Id` matches its `traceparent`,
+    - 401 without a token on `/api` and `/mcp/`,
+    - `/v3/api-docs`, Swagger UI with Compose's spec URLs, and the `/swagger-ui.html` redirect.
+  - The Collector's debug exporter holds the Gateway span and a polaris child span of that trace, with polaris's
+    Kubernetes attributes.
+  - `tests/perf/api-test.js` passes, unchanged, from a k6 pod (`SMOKE_K6_IMAGE`, `restricted`, as `testuser` with
+    `DEFAULT_PASSWORD`), with its thresholds.
+  - A second, open-ended k6 run continues while `kubectl rollout restart deployment/polaris` replaces both replicas.
+    k6 records every request to CSV, and no request may get a 5xx or lose its connection.
+

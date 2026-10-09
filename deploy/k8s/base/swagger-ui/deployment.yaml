@@ -1,0 +1,111 @@
+# Swagger UI (K8): Compose's `swagger-ui` service, the same image (swaggerapi/swagger-ui:v5.17.14, pinned by its
+# multi-arch index digest) and the same settings (configmap.yaml), behind https://polaris.local/swagger-ui.
+#
+# Pod Security `restricted` (TR-K10): the image's nginx runs as root on Compose and writes its generated config into
+# the image at startup (swagger-initializer.js from URLS and OAUTH_*, conf.d/default.conf from the templates). Here it
+# runs as the image's own `nginx` user (UID/GID 101) with a read-only root filesystem: an init container copies the
+# directories the entrypoint writes into emptyDirs, which the server mounts over the originals, plus emptyDirs for
+# nginx's cache and pid file. nginx's `user` directive is ignored (with a warning) when it doesn't start as root.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: swagger-ui
+  labels:
+    app.kubernetes.io/name: swagger-ui
+    app.kubernetes.io/part-of: polaris
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: swagger-ui
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: swagger-ui
+        app.kubernetes.io/part-of: polaris
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        runAsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: copy-writable
+          image: swaggerapi/swagger-ui:v5.17.14@sha256:cb968cc70260c6027b44f227d054a0f12381736e9ab628ef6b6070a19fdf2172
+          command: ["sh", "-c"]
+          args:
+            - cp -R /usr/share/nginx/html/. /work/html/ &&
+              cp -R /etc/nginx/conf.d/. /work/conf.d/ &&
+              cp -R /etc/nginx/templates/. /work/templates/
+          securityContext: &container-security
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources: &resources
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+          volumeMounts:
+            - name: html
+              mountPath: /work/html
+            - name: conf
+              mountPath: /work/conf.d
+            - name: templates
+              mountPath: /work/templates
+      containers:
+        - name: swagger-ui
+          image: swaggerapi/swagger-ui:v5.17.14@sha256:cb968cc70260c6027b44f227d054a0f12381736e9ab628ef6b6070a19fdf2172
+          envFrom:
+            - configMapRef:
+                name: swagger-ui
+          ports:
+            - name: http
+              containerPort: 8080
+          securityContext: *container-security
+          readinessProbe:
+            httpGet:
+              path: /swagger-ui/index.html
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 20
+            timeoutSeconds: 3
+          resources: *resources
+          volumeMounts:
+            - name: html
+              mountPath: /usr/share/nginx/html
+            - name: conf
+              mountPath: /etc/nginx/conf.d
+            - name: templates
+              mountPath: /etc/nginx/templates
+            - name: cache
+              mountPath: /var/cache/nginx
+            - name: run
+              mountPath: /run
+      volumes:
+        # The UI bundle plus the gzip copies the entrypoint writes next to it (~25Mi).
+        - name: html
+          emptyDir:
+            sizeLimit: 64Mi
+        - name: conf
+          emptyDir:
+            sizeLimit: 1Mi
+        - name: templates
+          emptyDir:
+            sizeLimit: 1Mi
+        - name: cache
+          emptyDir:
+            sizeLimit: 32Mi
+        - name: run
+          emptyDir:
+            sizeLimit: 1Mi

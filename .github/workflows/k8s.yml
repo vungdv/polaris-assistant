@@ -32,12 +32,17 @@ jobs:
     name: Deploy to kind and smoke test
     needs: validate
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
     - uses: actions/checkout@v7
     - name: Create cluster and apply overlays/local
       run: make k8s-up
-    - name: Re-run k8s-up (idempotent)
+    # The apps the cluster runs so far (K8: polaris), built from this commit and loaded with `kind load` (GHCR
+    # packages are private, and PR images aren't pushed). Both polaris replicas then start together on the empty
+    # database, the concurrent Flyway start the smoke test checks.
+    - name: Build and load the app images
+      run: make k8s-images APPS=polaris
+    - name: Re-run k8s-up (idempotent; waits for the apps)
       run: make k8s-up
     - name: Smoke test
       run: make k8s-smoke
@@ -60,6 +65,9 @@ jobs:
         .tools/bin/kubectl --kubeconfig .tools/kubeconfig --context kind-polaris -n polaris describe keycloaks.k8s.keycloak.org,keycloakrealmimports.k8s.keycloak.org || true
         .tools/bin/kubectl --kubeconfig .tools/kubeconfig --context kind-polaris -n polaris logs deployment/keycloak-operator --tail=200 || true
         .tools/bin/kubectl --kubeconfig .tools/kubeconfig --context kind-polaris -n polaris logs statefulset/keycloak --tail=200 || true
+        .tools/bin/kubectl --kubeconfig .tools/kubeconfig --context kind-polaris -n polaris describe deployments/polaris deployments/swagger-ui httproutes proxysettingspolicies || true
+        .tools/bin/kubectl --kubeconfig .tools/kubeconfig --context kind-polaris -n polaris logs -l app.kubernetes.io/name=polaris --prefix --tail=300 || true
+        .tools/bin/kubectl --kubeconfig .tools/kubeconfig --context kind-polaris -n polaris logs deployment/swagger-ui --all-containers --tail=100 || true
         .tools/bin/kind export logs --name polaris "${RUNNER_TEMP}/kind-logs" || true
     - name: Upload kind logs
       if: failure()

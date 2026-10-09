@@ -1,0 +1,19 @@
+# Compose's `swagger-ui` environment, unchanged: one dropdown entry per spec, both same-origin through the Gateway
+# (/v3/api-docs -> polaris, /v3/api-docs/assistant -> polaris-assistant from K9), served under /swagger-ui, and the
+# public PKCE client polaris-app for "Authorize".
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: swagger-ui
+  labels:
+    app.kubernetes.io/name: swagger-ui
+    app.kubernetes.io/part-of: polaris
+data:
+  URLS: >
+    [
+      {url: "/v3/api-docs", name: "Product Catalog API"},
+      {url: "/v3/api-docs/assistant", name: "Assistant API"}
+    ]
+  BASE_URL: /swagger-ui
+  OAUTH_CLIENT_ID: polaris-app
+  OAUTH_USE_PKCE: "true"

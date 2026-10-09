@@ -1,0 +1,128 @@
+# Order & Catalog service (K8): Compose's `polaris`, two replicas (TR-K5).
+#
+# Multi-replica safety (TR-K5): Flyway takes a PostgreSQL advisory lock, so replicas that start together apply each
+# migration once; the outbox relay leases one in-flight event per key across instances (E3), so events keep their
+# per-key order without a double hand-off; the Kafka consumers share one consumer group.
+#
+# Lifecycle (TR-K4), with server.shutdown=graceful and a 20s shutdown phase (application.yml, K2):
+#   - startupProbe gives Flyway and the context up to 5 minutes before liveness applies,
+#   - readiness (`readinessState` + `db`) takes a pod out of the Service; liveness restarts a wedged one,
+#   - on termination the preStop sleep keeps the pod serving for 10s while the Gateway drops the endpoint, then
+#     SIGTERM starts the graceful drain (at most 20s). terminationGracePeriodSeconds = 10 + 20 + 10s margin.
+#
+# Telemetry (TR-K9): OTLP to the Collector, whose k8s_attributes processor adds k8s.namespace.name, k8s.pod.name and
+# k8s.deployment.name. The pod's UID is set as a resource attribute (Spring Boot reads OTEL_RESOURCE_ATTRIBUTES), so the
+# Collector matches the pod by UID rather than only by the connection's source IP.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: polaris
+  labels:
+    app.kubernetes.io/name: polaris
+    app.kubernetes.io/part-of: polaris
+spec:
+  replicas: 2
+  # A rolling restart never drops below two ready pods.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: polaris
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: polaris
+        app.kubernetes.io/part-of: polaris
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 40
+      # Pod Security `restricted` (TR-K10): the image's numeric non-root user (K2).
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: polaris
+          image: polaris
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: polaris
+          env:
+            # Operator-generated owner credentials of polaris-db (K5, TR-K3).
+            - name: SPRING_DATASOURCE_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: polaris-db-app
+                  key: username
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: polaris-db-app
+                  key: password
+            - name: POD_UID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.uid
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: k8s.pod.uid=$(POD_UID)
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 60
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          lifecycle:
+            preStop:
+              sleep:
+                seconds: 10
+          resources:
+            requests:
+              cpu: 250m
+              memory: 384Mi
+            limits:
+              cpu: "2"
+              memory: 1Gi
+          volumeMounts:
+            # Embedded Tomcat's work directory and the JVM's temporary files, under a read-only root filesystem.
+            - name: tmp
+              mountPath: /tmp
+            # trust-manager's bundle (K3): the public roots plus the cluster root CA, as truststore.jks.
+            - name: trust
+              mountPath: /etc/polaris-trust
+              readOnly: true
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 256Mi
+        - name: trust
+          configMap:
+            name: polaris-ca-bundle

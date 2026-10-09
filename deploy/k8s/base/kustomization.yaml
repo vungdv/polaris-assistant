@@ -7,3 +7,5 @@ resources:
   - redis
   - kafka
   - keycloak
+  - polaris
+  - swagger-ui

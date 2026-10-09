@@ -1,0 +1,37 @@
+# Non-secret settings of the Order & Catalog service (K8, TR-K3), mapped from Compose's `polaris` service environment.
+# Differences from Compose:
+#   - The dev-only flags are dropped: `SPRING_JPA_SHOW-SQL` and `LOGGING_LEVEL_ORG_HIBERNATE_ORM_JDBC_BIND`. application.yml
+#     defaults `spring.jpa.show-sql` to true, so it is turned off explicitly here.
+#   - Addresses are the cluster's Services: the CNPG primary `polaris-db-rw`, `redis`, the Strimzi bootstrap Service
+#     and the Collector. The issuer stays the public `https://id.polaris.local` (TR-K8): CoreDNS rewrites it to the
+#     Gateway, which routes it to Keycloak, as nginx's network alias does on Compose.
+#   - The datasource credentials come from the CNPG Secret `polaris-db-app` (deployment.yaml), not from here.
+#   - The trust store is the trust-manager bundle mounted at /etc/polaris-trust (deployment.yaml), with Compose's
+#     `-Djavax.net.ssl.trustStore` system property. The JVM sizes its heap from the container memory limit.
+#   - springdoc's OAuth settings use the canonical underscore names that application.yml reads.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: polaris
+  labels:
+    app.kubernetes.io/name: polaris
+    app.kubernetes.io/part-of: polaris
+data:
+  SERVER_FORWARD_HEADERS_STRATEGY: framework
+  SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: https://id.polaris.local/realms/polaris
+  SPRING_DATASOURCE_URL: jdbc:postgresql://polaris-db-rw:5432/polaris
+  SPRING_DATASOURCE_DRIVER_CLASS_NAME: org.postgresql.Driver
+  SPRING_JPA_SHOW_SQL: "false"
+  SPRING_DATA_REDIS_HOST: redis
+  SPRING_DATA_REDIS_PORT: "6379"
+  # Any reachable broker bootstraps the client, which then discovers the whole cluster (K6).
+  SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka-kafka-bootstrap:9092
+  SPRINGDOC_SWAGGER_UI_OAUTH_CLIENT_ID: polaris-app
+  SPRINGDOC_SWAGGER_UI_OAUTH_USE_PKCE_WITH_AUTHORIZATION_CODE_GRANT: "true"
+  JAVA_TOOL_OPTIONS: -Djavax.net.ssl.trustStore=/etc/polaris-trust/truststore.jks -XX:MaxRAMPercentage=70
+  MANAGEMENT_OTLP_METRICS_EXPORT_URL: http://otel-collector:4318/v1/metrics
+  MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT: http://otel-collector:4318/v1/traces
+  MANAGEMENT_OPENTELEMETRY_LOGGING_EXPORT_OTLP_ENDPOINT: http://otel-collector:4318/v1/logs
+  # Every request is sampled at the Gateway; polaris honours the parent's flag (and samples its own roots).
+  MANAGEMENT_TRACING_SAMPLING_PROBABILITY: "1.0"
+  MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS: always

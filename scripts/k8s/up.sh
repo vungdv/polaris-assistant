@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Creates the local kind cluster (if it doesn't exist yet), installs the platform components (platform.sh) and
-# applies the local overlay, then waits for the edge, the data stores, Kafka and Keycloak to be ready. Safe to re-run.
+# applies the local overlay, then waits for the edge, the data stores, Kafka, Keycloak and the apps to be ready. Safe to
+# re-run.
 set -euo pipefail
 # shellcheck source=SCRIPTDIR/lib.sh
 source "$(dirname "$0")/lib.sh"
@@ -88,4 +89,16 @@ done
 kctl -n "$K8S_NAMESPACE" rollout status "statefulset/$KEYCLOAK" --timeout="$K8S_WAIT_TIMEOUT" >/dev/null
 kctl -n "$K8S_NAMESPACE" wait --for=condition=Ready "keycloak.k8s.keycloak.org/$KEYCLOAK" \
   --timeout="$K8S_WAIT_TIMEOUT" >/dev/null
+
+# Order & Catalog (K8): Swagger UI is available, and polaris has its two replicas ready (Flyway done) once its image
+# is on the node. On a fresh cluster it isn't yet: `make k8s-images` builds and loads it, and the next `make k8s-up`
+# waits here.
+log "waiting for $SWAGGER_UI"
+kctl -n "$K8S_NAMESPACE" rollout status "deployment/$SWAGGER_UI" --timeout="$K8S_WAIT_TIMEOUT" >/dev/null
+if image_loaded "$(app_image "$POLARIS")"; then
+  log "waiting for $POLARIS ($(app_image "$POLARIS"))"
+  kctl -n "$K8S_NAMESPACE" rollout status "deployment/$POLARIS" --timeout="$K8S_WAIT_TIMEOUT" >/dev/null
+else
+  log "image $(app_image "$POLARIS") is not loaded yet: run 'make k8s-images APPS=$POLARIS', then 'make k8s-up' again"
+fi
 log "cluster '$KIND_CLUSTER_NAME' is up (context $KUBE_CONTEXT)"
