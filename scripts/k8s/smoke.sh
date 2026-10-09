@@ -1084,9 +1084,8 @@ traceparent="00-$trace_id-$(hex 8)-01"
 assistant_script='c() { curl -sS --max-time 15 --cacert /etc/polaris-trust/ca.crt "$@"; }
 t=$(c -d grant_type=password -d client_id=polaris-app -d username=shopper.1 --data-urlencode "password=$DEFAULT_PASSWORD" \
   https://id.polaris.local/realms/polaris/protocol/openid-connect/token | sed -n "s/.*\"access_token\":\"\([^\"]*\)\".*/\1/p")
-components() { tr "," "\n" | sed -n "s/.*\"\([A-Za-z]*\)\":{\"status\".*/\1/p" | sort | tr "\n" " "; }
-echo "readiness $(c -H "Authorization: Bearer $t" http://polaris-assistant:8081/actuator/health/readiness | components)"
-echo "health $(c --max-time 30 -H "Authorization: Bearer $t" http://polaris-assistant:8081/actuator/health | components)"
+echo "readiness $(c -H "Authorization: Bearer $t" http://polaris-assistant:8081/actuator/health/readiness | tr -d "\n")"
+echo "health $(c --max-time 30 -H "Authorization: Bearer $t" http://polaris-assistant:8081/actuator/health | tr -d "\n")"
 echo "api-docs $(c -o /dev/null -w "%{http_code} %{content_type}" https://polaris.local/v3/api-docs/assistant)"
 echo "api-docs-paths $(c https://polaris.local/v3/api-docs/assistant | grep -c "/api/v1/assistant/chat")"
 echo "chat $(c --max-time 90 -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $t" -H "traceparent: $TRACEPARENT" \
@@ -1099,10 +1098,15 @@ assistant_env="$(secret_env DEFAULT_PASSWORD "$KEYCLOAK_REALM_SECRET" DEFAULT_PA
           value: \"$trace_id\""
 if out="$(run_probe k9-assistant-smoke "$SMOKE_CURL_IMAGE" 100 "$assistant_script" "$assistant_env")"; then
   log "assistant probe results:"$'\n'"$out"
-  check "the readiness group holds readinessState, db and polarisMcp only (no gemini, no typeSafe)" \
-    grep -qx "readiness db polarisMcp readinessState " <<<"$out"
-  models_outside_readiness() { grep "^health " <<<"$1" | grep -q " gemini " && grep "^health " <<<"$1" | grep -q " typeSafe "; }
-  check "gemini and typeSafe are on /actuator/health, outside readiness" models_outside_readiness "$out"
+  # has_component <line prefix> <component>: the health JSON on that line has the component (`"<name>":{`).
+  has_component() { grep "^$1 " <<<"$out" | grep -q "\"$2\":{"; }
+  readiness_members() {
+    has_component readiness readinessState && has_component readiness db && has_component readiness polarisMcp &&
+      ! has_component readiness gemini && ! has_component readiness typeSafe
+  }
+  check "the readiness group holds readinessState, db and polarisMcp (no gemini, no typeSafe)" readiness_members
+  models_on_health() { has_component health gemini && has_component health typeSafe; }
+  check "gemini and typeSafe are on /actuator/health, outside readiness" models_on_health
   check "GET /v3/api-docs/assistant through the Gateway answers the assistant's OpenAPI document" \
     grep -q "^api-docs 200 application/json" <<<"$out"
   check "the assistant's OpenAPI document lists /api/v1/assistant/chat" grep -Eq "^api-docs-paths [1-9]" <<<"$out"
@@ -1130,9 +1134,11 @@ while [ "$SECONDS" -lt "$deadline" ]; do
   as_block="$(resource_blocks "k8s.deployment.name: Str\\\\($ASSISTANT\\\\)")"
   as_rows="$(span_rows "$as_block")"
   pl_rows="$(span_rows "$(resource_blocks "k8s.deployment.name: Str\\\\($POLARIS\\\\)")")"
-  as_ids=" $(awk '{ printf "%s ", $3 }' <<<"$as_rows")"
+  # The assistant's MCP client spans are named mcp.polaris.* (discovery, execute); polaris's server span for each
+  # MCP call is their child.
+  mcp_ids=" $(awk '$4 ~ /^mcp\./ { printf "%s ", $3 }' <<<"$as_rows")"
   as_child="$(awk -v ids="$gw_ids" 'index(ids, " " $2 " ")' <<<"$as_rows")"
-  mcp_child="$(awk -v ids="$as_ids" 'index(ids, " " $2 " ") && tolower($0) ~ /mcp/' <<<"$pl_rows")"
+  mcp_child="$(awk -v ids="$mcp_ids" 'index(ids, " " $2 " ")' <<<"$pl_rows")"
   if [ -n "$as_child" ] && [ -n "$mcp_child" ]; then break; fi
   sleep 3
 done
@@ -1144,7 +1150,7 @@ assistant_attributes() {
 }
 check "the assistant spans carry k8s.namespace.name, k8s.pod.name and k8s.deployment.name of $ASSISTANT" \
   assistant_attributes "$as_block"
-check "a polaris MCP span is a child of an assistant span: one trace Gateway -> $ASSISTANT -> $POLARIS (MCP)" \
+check "a polaris server span is a child of an assistant MCP call (mcp.polaris.*): one trace Gateway -> $ASSISTANT -> $POLARIS (MCP)" \
   [ -n "$mcp_child" ]
 
 # A rolling restart doesn't cut an in-flight turn (TR-K4): a probe sends a chat turn straight to one replica a few
