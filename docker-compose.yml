@@ -28,6 +28,9 @@ x-kafka-healthcheck: &kafka-healthcheck
   retries: 10
   start_period: 20s
 
+include:
+  - docker-compose.otel.yml
+  - docker-compose.apim.yml
 services:
   nginx:
     # Official -otel variant: ships ngx_otel_module. Pinned.

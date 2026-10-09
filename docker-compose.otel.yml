@@ -212,6 +212,7 @@ volumes:
 
 networks:
   polaris-net:
+    name: polaris-net
     ipam:
       config:
         - subnet: 172.29.250.0/24

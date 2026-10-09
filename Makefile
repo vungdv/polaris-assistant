@@ -17,7 +17,7 @@ pull:
 build:
 	docker compose build
 up:
-	docker compose up -d --build
+	docker compose up -d
 # Opt-in loopback publish of telemetry backends for host-side tooling
 up-dev-ports:
 	docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.dev-ports.yml up -d --build
