@@ -19,7 +19,7 @@ Define business value, personas, and Given/When/Then acceptance criteria without
 6. **Technical Verification & Business Acceptance Gate:**
    - Audit developer Completion Reports against `AGENTS.md` and bounded context boundaries.
    - Verify automated unit and integration test logs (`mvn clean test`).
-   - Verify Playwright CLI E2E session evidence (snapshots, traces, and screenshots under `.playwright-cli/`) exercising major use cases on the running local stack (`docker-compose.yml` + `docker-compose.override.yml`).
+   - Verify Playwright CLI E2E session evidence (snapshots, traces, and screenshots under `.playwright-cli/`) exercising major use cases on the running local stack (`docker-compose.yml`).
    - Sign off on delivered business acceptance criteria and issue formal Technical Verification Sign-Off (or return actionable remediation instructions).
 
 ### Project Resources

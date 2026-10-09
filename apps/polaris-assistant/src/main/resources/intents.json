@@ -145,6 +145,7 @@
       "abort order ORD-999"
     ],
     "allowedTools": [
+      "get_order_status",
       "cancel_order",
       "discard_order_draft"
     ],

@@ -88,7 +88,7 @@ In `infra/nginx/nginx.conf`:
 
 #### 2. Service Orchestration & DNS Aliasing (Docker Compose)
 - In `docker-compose.yml`, register `grafana.polaris.local` as an alias on `polaris-net` for the `nginx` service so intra-network requests resolve correctly.
-- In `docker-compose.override.yml`:
+- In `../../../docker-compose.otel.yml`:
   - Set `GF_SERVER_ROOT_URL=https://grafana.polaris.local/`.
   - Declare `nginx` service dependency on `grafana` (`depends_on: [grafana]`).
   - Maintain `GRAFANA_SERVER=http://grafana:3000` for `gcx-cli`.

@@ -98,6 +98,7 @@ services:
     #   - "8080:8080"
     environment:
       # DEBUG: "true"
+      SPRING_APPLICATION_NAME: Order-ProductCatalog
       SERVER_FORWARD_HEADERS_STRATEGY: framework
       # Access Keycloak through its canonical public issuer URL.
       # Internally, id.polaris.local resolves to the nginx container.

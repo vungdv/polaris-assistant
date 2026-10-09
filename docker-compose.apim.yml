@@ -71,8 +71,8 @@ services:
       - storage
 
   gateway:
-    image: ${APIM_REGISTRY:-graviteeio}/apim-gateway:${APIM_VERSION:-latest}
-    container_name: gio_apim_https_gateway
+    image: ${APIM_REGISTRY:-graviteeio}/apim-gateway:${APIM_VERSION:-4.12.21}
+    container_name: gio_apim_gateway
     restart: always
     ports:
       - '8082:8082'
@@ -83,27 +83,19 @@ services:
         condition: service_healthy
     volumes:
       - ./.logs/apim-gateway-internal:/opt/graviteeio-gateway/logs
-      - ./.certificates:/opt/graviteeio-gateway/certificates
       - ./.license:/opt/graviteeio-gateway/license
     environment:
       - gravitee_management_mongodb_uri=mongodb://mongodb:27017/gravitee?serverSelectionTimeoutMS=5000&connectTimeoutMS=5000&socketTimeoutMS=5000
       - gravitee_ratelimit_mongodb_uri=mongodb://mongodb:27017/gravitee?serverSelectionTimeoutMS=5000&connectTimeoutMS=5000&socketTimeoutMS=5000
       - gravitee_reporters_elasticsearch_endpoints_0=http://elasticsearch:9200
-      - gravitee_http_secured=true
-      - gravitee_http_ssl_clientAuth=request
-      - gravitee_http_ssl_keystore_type=pkcs12
-      - gravitee_http_ssl_keystore_path=/opt/graviteeio-gateway/certificates/server.p12
-      - gravitee_http_ssl_keystore_password=server-secret
-      - gravitee_http_ssl_truststore_type=pkcs12
-      - gravitee_http_ssl_truststore_path=/opt/graviteeio-gateway/certificates/ca.p12
-      - gravitee_http_ssl_truststore_password=ca-secret
+      # Plain HTTP: TLS is terminated at the nginx edge (api-management plan, D6).
     networks:
       - storage
       - frontend
       - backend
 
   management_api:
-    image: ${APIM_REGISTRY:-graviteeio}/apim-management-api:${APIM_VERSION:-latest}
+    image: ${APIM_REGISTRY:-graviteeio}/apim-management-api:${APIM_VERSION:-4.12.21}
     container_name: gio_apim_management_api
     restart: always
     ports:
@@ -128,7 +120,7 @@ services:
       - backend
 
   management_ui:
-    image: ${APIM_REGISTRY:-graviteeio}/apim-management-ui:${APIM_VERSION:-latest}
+    image: ${APIM_REGISTRY:-graviteeio}/apim-management-ui:${APIM_VERSION:-4.12.21}
     container_name: gio_apim_management_ui
     restart: always
     ports:
@@ -143,7 +135,7 @@ services:
       - frontend
 
   portal_ui:
-    image: ${APIM_REGISTRY:-graviteeio}/apim-portal-ui:${APIM_VERSION:-latest}
+    image: ${APIM_REGISTRY:-graviteeio}/apim-portal-ui:${APIM_VERSION:-4.12.21}
     container_name: gio_apim_portal_ui
     restart: always
     ports:
