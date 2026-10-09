@@ -1,0 +1,22 @@
+# VS Code REST Client (humao.rest-client): click "Send Request" above each request, top to bottom.
+# alice.tran is the seeded shopper from docker/keycloak/polaris-realm.json; NG-EARBUD-01 comes from V2__seed_data.sql.
+@gateway = http://localhost:8082
+@tokenUrl = https://id.polaris.local/realms/polaris/protocol/openid-connect/token
+@clientId = polaris-app
+@username = alice.tran
+@password = testpass
+@sku = NG-EARBUD-01
+
+### 1. Password grant (request 2 reads the token from this response)
+# @name login
+POST {{tokenUrl}}
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=password&client_id={{clientId}}&username={{username}}&password={{password}}
+
+### 2. Search a seeded product through the Gravitee gateway: expect 200, X-Gravitee-Transaction-Id, the SKU in content[]
+GET {{gateway}}/api/v1/products?query={{sku}}
+Authorization: Bearer {{login.response.body.$.access_token}}
+
+### 3. Without a token: polaris answers 401 (keyless plan)
+GET {{gateway}}/api/v1/products?query={{sku}}

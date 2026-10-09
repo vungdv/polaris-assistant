@@ -1,0 +1,62 @@
+
+openapi: 3.0.3
+info:
+  title: Polaris Products API
+  version: 1.0.0
+  description: Product search through the Gravitee API Gateway
+
+servers:
+  - url: http://localhost:8082/api/v1/products
+  - url: /api/v1/products
+
+security:
+  - keycloak-auth2-codeflow: [openid, profile]
+  - bearerAuth: []
+
+paths:
+  /:
+    get:
+      operationId: searchProducts
+      summary: Search products
+      parameters:
+        - name: query
+          in: query
+          schema:
+            type: string
+        - name: category
+          in: query
+          schema:
+            type: string
+        - name: available
+          in: query
+          schema:
+            type: boolean
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: Products returned successfully
+
+components:
+  securitySchemes:
+    keycloak-auth2-codeflow:
+      type: oauth2
+      flows:
+        authorizationCode:
+          authorizationUrl: https://id.polaris.local/realms/polaris/protocol/openid-connect/auth
+          tokenUrl: https://id.polaris.local/realms/polaris/protocol/openid-connect/token
+          scopes:
+            openid: OpenID Connect
+            profile: Profile info
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

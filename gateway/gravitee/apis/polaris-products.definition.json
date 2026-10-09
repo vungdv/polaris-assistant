@@ -1,0 +1,71 @@
+{
+  "api": {
+    "definitionVersion": "V4",
+    "type": "PROXY",
+    "name": "Polaris Products",
+    "apiVersion": "1.0.0",
+    "description": "Product search through the Gravitee API Gateway (GET /api/v1/products only)",
+    "visibility": "PRIVATE",
+    "listeners": [
+      {
+        "type": "HTTP",
+        "paths": [{ "path": "/api/v1/products" }],
+        "entrypoints": [{ "type": "http-proxy", "qos": "AUTO" }]
+      }
+    ],
+    "endpointGroups": [
+      {
+        "name": "polaris-group",
+        "type": "http-proxy",
+        "loadBalancer": { "type": "ROUND_ROBIN" },
+        "sharedConfiguration": {
+          "http": {
+            "version": "HTTP_1_1",
+            "connectTimeout": 3000,
+            "readTimeout": 10000,c
+            "keepAlive": true,
+            "propagateClientHost": false
+          }
+        },
+        "endpoints": [
+          {
+            "name": "polaris",
+            "type": "http-proxy",
+            "weight": 1,
+            "inheritConfiguration": true,
+            "configuration": { "target": "http://polaris:8080/api/v1/products" }
+          }
+        ]
+      }
+    ],
+    "flowExecution": { "mode": "BEST_MATCH", "matchRequired": true },
+    "flows": [
+      {
+        "name": "GET /api/v1/products",
+        "enabled": true,
+        "selectors": [
+          { "type": "HTTP", "path": "/", "pathOperator": "EQUALS", "methods": ["GET"] }
+        ],
+        "request": [],
+        "response": []
+      }
+    ]
+  },
+  "plans": [
+    {
+      "definitionVersion": "V4",
+      "name": "Keyless",
+      "description": "No gateway-side auth: the caller's bearer token is forwarded to polaris, which authorises it",
+      "security": { "type": "KEY_LESS" },
+      "mode": "STANDARD",
+      "validation": "AUTO",
+      "status": "PUBLISHED",
+      "type": "API",
+      "order": 1,
+      "flows": []
+    }
+  ],
+  "pages": [],
+  "members": [],
+  "metadata": []
+}
