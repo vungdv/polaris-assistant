@@ -1,0 +1,13 @@
+# Voluntary disruptions (node drains) evict at most one of the two replicas at a time (TR-K5).
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: polaris-assistant
+  labels:
+    app.kubernetes.io/name: polaris-assistant
+    app.kubernetes.io/part-of: polaris
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: polaris-assistant

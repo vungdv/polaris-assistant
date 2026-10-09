@@ -24,6 +24,12 @@ spec:
       name: polaris-mcp
     - group: gateway.networking.k8s.io
       kind: HTTPRoute
+      name: polaris-assistant
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: polaris-assistant-api-docs
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
       name: swagger-ui
   tracing:
     strategy: ratio

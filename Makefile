@@ -44,7 +44,7 @@ seed-shoppers:
 	docker run --rm -i --add-host id.polaris.local:host-gateway -v $$(pwd)/tests/e2e/k6:/scripts:ro -w /scripts \
 	  -e KC_BASE -e REALM -e KC_ADMIN_USER -e KC_ADMIN_PASSWORD -e SHOPPER_COUNT -e SHOPPER_PREFIX -e SHOPPER_PASSWORD grafana/k6 run seed-shoppers.js
 chat-scenarios:
-	docker run --rm -i --add-host id.polaris.local:host-gateway --add-host host.docker.internal:host-gateway \
+	docker run --rm -i --add-host id.polaris.local:host-gateway --add-host polaris.local:host-gateway --add-host host.docker.internal:host-gateway \
 	  -v $$(pwd)/tests/e2e/k6:/scripts:ro -w /scripts \
 	  -e API_BASE -e ASSISTANT_BASE -e KC_BASE -e REALM -e E2E_STAFF_USER -e E2E_STAFF_PASSWORD -e SKU -e SHOPPER_COUNT -e SHOPPER_PREFIX \
 	  -e SHOPPER_PASSWORD -e SEARCH_QUERY -e CHAT_VUS -e CHAT_ITERATIONS -e CHAT_TIMEOUT -e THINK_TIME grafana/k6 run chat-scenarios.js

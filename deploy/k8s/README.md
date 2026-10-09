@@ -7,7 +7,7 @@ Manifests and tooling for running Polaris on Kubernetes ([ADR-0021](../../docs/t
 | `versions.env` | Pinned versions of kind, its node image, kubectl, kubeconform, helm, the schema catalogs and the platform charts |
 | `kind/cluster.yaml` | Local kind cluster: host ports 80/443 → NodePorts 30080/30443 |
 | `platform/` | Helm values and CRs for third-party components: cert-manager, trust-manager, NGINX Gateway Fabric, the cluster PKI (`pki/`), the CoreDNS rewrite (`coredns/`), the OpenTelemetry Collector (`otel-collector/`) and its log agent (`otel-agent/`), the CloudNativePG operator (`cloudnative-pg/`), the Strimzi operator (`strimzi/`), the Keycloak Operator (`keycloak-operator/`: patches over its upstream release manifests) |
-| `base/` | Cluster-agnostic manifests: the `polaris` namespace (Pod Security `restricted`), then one directory per component (`edge/`: Gateway, certificate, HTTP redirect, tracing policy; `data/`: PostgreSQL Clusters; `redis/`; `kafka/`: the Kafka cluster; `keycloak/`: the Keycloak server and its HTTPRoute; `polaris/`: the Order & Catalog service and its HTTPRoutes; `swagger-ui/`) |
+| `base/` | Cluster-agnostic manifests: the `polaris` namespace (Pod Security `restricted`), then one directory per component (`edge/`: Gateway, certificate, HTTP redirect, tracing policy; `data/`: PostgreSQL Clusters; `redis/`; `kafka/`: the Kafka cluster; `keycloak/`: the Keycloak server and its HTTPRoute; `polaris/`: the Order & Catalog service and its HTTPRoutes; `polaris-assistant/`: the assistant and its HTTPRoutes; `swagger-ui/`) |
 | `overlays/local/` | The kind environment: image tags, replica counts, Secrets from the untracked `deploy/k8s/.env.local` |
 | `overlays/local/realms/` | Generated and untracked: the Kustomize component that imports `docker/keycloak/*.json` (KeycloakRealmImport `polaris-realm`, ConfigMap `keycloak-master-realm`) |
 | `overlays/local/images/` | Generated and untracked: the Kustomize component that pins each app image to `ghcr.io/<owner>/<app>:<git-sha>` of the current checkout |
@@ -294,4 +294,49 @@ operator's post-import restart has finished.
     `DEFAULT_PASSWORD`), with its thresholds.
   - A second, open-ended k6 run continues while `kubectl rollout restart deployment/polaris` replaces both replicas.
     k6 records every request to CSV, and no request may get a 5xx or lose its connection.
+
+## Assistant (`polaris-assistant`)
+
+`base/polaris-assistant/` runs Compose's `polaris-assistant` service behind the Gateway on `https://polaris.local`.
+
+| Compose | Kubernetes |
+|:--|:--|
+| `polaris-assistant` container, `environment:` | Deployment `polaris-assistant` (2 replicas), ConfigMap `polaris-assistant` (`envFrom`), Service `polaris-assistant:8081` |
+| `SPRING_DATASOURCE_USERNAME`/`PASSWORD` `polaris`/`polaris` | `secretKeyRef` to the CNPG Secret `polaris-db-app` (the assistant shares the polaris database, as on Compose) |
+| `GEMINI_API_KEY`, `TYPESAFE_API_KEY`, `AGENTO11Y_*` from `.env` | Secret `polaris-assistant` (`envFrom`), written by `make k8s-up` from the same keys in the untracked `deploy/k8s/.env.local` |
+| `POLARIS_MCP_CORE_URL`, `POLARIS_CORE_API_BASE_URL` on `http://polaris:8080` | The same, on the `polaris` Service |
+| `depends_on: polaris: service_healthy` | Init container `wait-for-polaris`: waits until the `polaris` Service answers its readiness group, so Flyway has migrated before the assistant's Hibernate `ddl-auto: update` creates its tables |
+| healthcheck on liveness + readiness (`db`, `polarisMcp`) | `startupProbe`/`livenessProbe` on `/actuator/health/liveness`, `readinessProbe` on `/actuator/health/readiness`: still `readinessState` + `db` + `polarisMcp` only, so a Gemini or TypeSafe outage never takes a pod out of the Service |
+| `user: root` | UID/GID 10001, read-only root filesystem, `emptyDir` on `/tmp`, no capabilities, seccomp `RuntimeDefault` |
+| nginx `location /api/v1/assistant` (`proxy_buffering off`) and `location /v3/api-docs/assistant` | HTTPRoutes `polaris-assistant` (`/api/v1/assistant`, NGF `ProxySettingsPolicy` `polaris-assistant-sse`: buffering off, 5m read and send timeouts) and `polaris-assistant-api-docs` (`/v3/api-docs/assistant`, rewritten to `/v3/api-docs`) |
+
+- **Secret.** `make k8s-up` writes Secret `polaris-assistant` from the non-empty `GEMINI_API_KEY`, `TYPESAFE_API_KEY`
+  and `AGENTO11Y_*` keys of `deploy/k8s/.env.local` (`K8S_ENV_FILE`) on every run. A key left empty is absent, so
+  `application.yml`'s default applies (`AGENTO11Y_PROTOCOL=none`; without `GEMINI_API_KEY` the pods stay ready but chat
+  answers 503). When the Secret changes, `make k8s-up` restarts the Deployment. CI writes the env file from the
+  repository secrets `GEMINI_API_KEY` and `TYPESAFE_API_KEY`.
+- **Image.** As for polaris: `make k8s-images APPS=polaris-assistant`, then `make k8s-up` again.
+- **Lifecycle (TR-K4).** The 30s graceful-shutdown phase covers a whole chat turn (25s turn deadline). With the 10s
+  `preStop` sleep, `terminationGracePeriodSeconds` is 50 (10 + 30 + 10s margin), so a rolling restart doesn't cut an
+  in-flight turn. Requests 250m CPU and 384Mi, limits 2 CPUs and 1Gi.
+- **Multiple replicas (TR-K5).** Sessions, messages and order drafts are in PostgreSQL (JPA session store), the intent
+  taxonomy in Redis, so any replica serves any turn. `maxUnavailable: 0` and PodDisruptionBudget `polaris-assistant`
+  (`minAvailable: 1`), as for polaris. Hibernate `ddl-auto: update` on the shared, Flyway-owned database stays a known
+  risk (a follow-up in the plan).
+- **Telemetry (TR-K9).** As for polaris. Both routes are in `base/edge/tracing-policy.yaml`, and the assistant forwards
+  `traceparent` on its MCP and REST calls, so one trace spans the Gateway, the assistant and polaris.
+- **Smoke.** `make k8s-smoke` checks the following:
+  - 2/2 replicas are ready, the PDB is in place, the routes and the SSE policy are accepted, and the Secret has both
+    model keys.
+  - `make seed-shoppers` (as the operator's bootstrap admin from Secret `keycloak-initial-admin`) and
+    `make chat-scenarios` pass from the host through the Gateway, with the realm users' `DEFAULT_PASSWORD`.
+  - `tests/e2e/k6/chat-scenarios.js` passes again from a k6 pod with `ASSISTANT_BASES` set to the two pods' addresses,
+    so consecutive requests of one session alternate between replicas: the order draft staged on one is confirmed on
+    the other. The intent taxonomy is in Redis.
+  - With a token, the readiness group lists `readinessState`, `db` and `polarisMcp` only, and `/actuator/health` also
+    lists `gemini` and `typeSafe`. `/v3/api-docs/assistant` through the Gateway is the assistant's OpenAPI document.
+  - A chat turn through the Gateway with a fresh `traceparent`: the Collector holds the Gateway's span, an assistant
+    child span with the assistant's Kubernetes attributes, and a polaris MCP span that is the child of an assistant span.
+  - A chat turn sent straight to a replica that is already terminating completes with 200, and the Deployment is back
+    to 2 ready replicas.
 

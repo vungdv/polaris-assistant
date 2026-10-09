@@ -39,6 +39,9 @@ export const SHOPPER_PASSWORD = __ENV.SHOPPER_PASSWORD || 'testpass';
 
 // polaris-assistant (published on 8081); each chat turn calls the LLM, hence the long request timeout.
 export const ASSISTANT_BASE = __ENV.ASSISTANT_BASE || 'http://host.docker.internal:8081';
+// Optional, comma-separated: the assistant requests of a VU take turns across these bases (one replica each), so
+// consecutive turns of one session land on different replicas (the K9 replica-switch check). Default: ASSISTANT_BASE.
+export const ASSISTANT_BASES = (__ENV.ASSISTANT_BASES || ASSISTANT_BASE).split(',').map((b) => b.trim()).filter(Boolean);
 export const CHAT_TIMEOUT = __ENV.CHAT_TIMEOUT || '120s';
 export const CHAT_VUS = Number(__ENV.CHAT_VUS || 1);              // one shopper.N per VU, capped by SHOPPER_COUNT
 export const CHAT_ITERATIONS = Number(__ENV.CHAT_ITERATIONS || 1); // full journeys per VU
