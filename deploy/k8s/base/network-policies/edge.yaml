@@ -1,0 +1,67 @@
+# The Gateway's data plane (K3): the NGINX Gateway Fabric pods of the Gateway `polaris`. North-south entry point, so it
+# accepts HTTP and HTTPS from anywhere: browsers and k6 through the NodePort, and the in-cluster clients of
+# https://polaris.local and https://id.polaris.local (the apps' JWKS and token calls, CoreDNS rewrite). It routes to
+# polaris, the assistant, Swagger UI and Keycloak (the only path to Keycloak's 8080), exports its spans to the Collector
+# (OTLP/gRPC), and its NGINX agent takes its configuration from the control plane in nginx-gateway (gRPC).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: gateway
+  labels:
+    app.kubernetes.io/part-of: polaris
+spec:
+  podSelector:
+    matchLabels:
+      gateway.networking.k8s.io/gateway-name: polaris
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - ports:
+        - protocol: TCP
+          port: 80
+        - protocol: TCP
+          port: 443
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: polaris
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: swagger-ui
+      ports:
+        - protocol: TCP
+          port: 8080
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: polaris-assistant
+      ports:
+        - protocol: TCP
+          port: 8081
+    - to:
+        - podSelector:
+            matchLabels:
+              app: keycloak
+              app.kubernetes.io/component: server
+      ports:
+        - protocol: TCP
+          port: 8080
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: otel-collector
+      ports:
+        - protocol: TCP
+          port: 4317
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: nginx-gateway
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: nginx-gateway-fabric
+      ports:
+        - protocol: TCP
+          port: 8443

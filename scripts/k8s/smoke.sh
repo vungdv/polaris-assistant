@@ -41,6 +41,54 @@ else
   fail "namespace $K8S_NAMESPACE does not exist"
 fi
 
+# --- Smoke probes under the NetworkPolicies (K11) ------------------------------------------------------------
+# The namespace denies all traffic except the flows of §Topology (base/network-policies). The smoke test's own probe
+# pods (curl, psql, redis-cli, k6) aren't part of that allow list, but check components directly (a database, Redis,
+# management ports, pod addresses). For the duration of the run, a test fixture admits pods labelled
+# polaris.local/smoke-probe=true to and from every pod of the namespace. It is removed on exit, and the K11 checks show
+# that a pod without the label stays locked out. The fixture is never part of the deployed manifests.
+SMOKE_PROBE_KEY=polaris.local/smoke-probe
+kctl -n "$K8S_NAMESPACE" apply -f - >/dev/null <<EOF
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: smoke-probes
+  labels:
+    app.kubernetes.io/name: smoke-probes
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              $SMOKE_PROBE_KEY: "true"
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: smoke-probes-egress
+  labels:
+    app.kubernetes.io/name: smoke-probes
+spec:
+  podSelector:
+    matchLabels:
+      $SMOKE_PROBE_KEY: "true"
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector: {}
+EOF
+remove_smoke_policy() {
+  kctl -n "$K8S_NAMESPACE" delete networkpolicy smoke-probes smoke-probes-egress --ignore-not-found --wait=false \
+    >/dev/null 2>&1 || true
+}
+# probe_label: the value of $SMOKE_PROBE_KEY on the probe pods below (run_probe); "false" leaves a probe outside the
+# fixture.
+probe_label=true
+
 # --- K3: edge (TLS, Gateway, DNS) -----------------------------------------------------------------------------
 cond() { kctl get "$@" -o jsonpath="{.status.conditions[?(@.type=='${COND:-Ready}')].status}" 2>/dev/null; }
 
@@ -86,7 +134,7 @@ traced_url="http://polaris.local/k4-trace-smoke/$trace_id"
 gateway_ip="$(kctl -n "$K8S_NAMESPACE" get service "$GATEWAY_SERVICE" -o jsonpath='{.spec.clusterIP}' 2>/dev/null || true)"
 probe=edge-smoke
 kctl -n "$K8S_NAMESPACE" delete pod "$probe" --ignore-not-found --wait=true >/dev/null
-trap 'kctl -n "$K8S_NAMESPACE" delete pod "$probe" --ignore-not-found --wait=false >/dev/null 2>&1 || true' EXIT
+trap 'kctl -n "$K8S_NAMESPACE" delete pod "$probe" --ignore-not-found --wait=false >/dev/null 2>&1 || true; remove_smoke_policy' EXIT
 urls=()
 unrouted=/k3-edge-smoke/unrouted
 for host in "${EDGE_HOSTS[@]}"; do urls+=("https://$host$unrouted"); done
@@ -98,6 +146,7 @@ metadata:
   name: $probe
   labels:
     app.kubernetes.io/name: $probe
+    $SMOKE_PROBE_KEY: "true"
 spec:
   restartPolicy: Never
   automountServiceAccountToken: false
@@ -240,7 +289,7 @@ check "deployment $REDIS is available" quiet kctl -n "$K8S_NAMESPACE" rollout st
 # $CA_BUNDLE at /etc/polaris-trust, and prints its output.
 # <env> is an optional container `env:` list, already indented. Returns non-zero when the pod doesn't succeed in 180s.
 k5_probes=(pg-smoke-write pg-smoke-read redis-smoke)
-trap 'kctl -n "$K8S_NAMESPACE" delete pod "$probe" "${k5_probes[@]}" --ignore-not-found --wait=false >/dev/null 2>&1 || true' EXIT
+trap 'kctl -n "$K8S_NAMESPACE" delete pod "$probe" "${k5_probes[@]}" --ignore-not-found --wait=false >/dev/null 2>&1 || true; remove_smoke_policy' EXIT
 run_probe() {
   local name="$1" image="$2" uid="$3" script="$4" env="${5:-}" rc=0 nl=$'\n'
   local body="          ${script//$nl/$nl          }" # the script, indented into the YAML block scalar below
@@ -252,6 +301,7 @@ metadata:
   name: $name
   labels:
     app.kubernetes.io/name: $name
+    $SMOKE_PROBE_KEY: "$probe_label"
 spec:
   restartPolicy: Never
   automountServiceAccountToken: false
@@ -447,6 +497,9 @@ kafka_timeout="${KAFKA_SMOKE_TIMEOUT:-240}"
 # shellcheck disable=SC2329 # invoked by the EXIT trap
 cleanup() {
   kctl -n "$K8S_NAMESPACE" delete pod "$probe" "${k5_probes[@]}" --ignore-not-found --wait=false >/dev/null 2>&1 || true
+  remove_smoke_policy
+  # A drain interrupted by a failure must not leave the worker cordoned (K11).
+  [ -z "${drained_node:-}" ] || kctl uncordon "$drained_node" >/dev/null 2>&1 || true
   if [ -n "${kafka_topic_created:-}" ]; then
     for node in 1 2 3; do
       kafka_cli "$node" kafka-topics --delete --if-exists --topic "$kafka_topic" </dev/null >/dev/null 2>&1 && break
@@ -616,10 +669,21 @@ check "the Collector received Keycloak spans (service.name keycloak)" [ "${kc_sp
 # --- K8: Order & Catalog (polaris) and Swagger UI -------------------------------------------------------------
 # The polaris and Swagger UI pods run in the namespace that enforces `restricted`, so their being ready shows they
 # pass it. Every request goes through the Gateway, as clients send it (TR-K11).
-check "deployment $POLARIS has 2 of 2 replicas ready" [ "$(kctl -n "$K8S_NAMESPACE" get deployment "$POLARIS" \
-  -o jsonpath='{.status.readyReplicas}/{.spec.replicas}' 2>/dev/null)" = 2/2 ]
-check "PodDisruptionBudget $POLARIS (minAvailable 1) allows 1 disruption" [ "$(kctl -n "$K8S_NAMESPACE" get pdb \
-  "$POLARIS" -o jsonpath='{.spec.minAvailable} {.status.disruptionsAllowed}' 2>/dev/null)" = "1 1" ]
+# all_ready <deployment>: every replica is ready, and there are 2 to 4 of them (the HorizontalPodAutoscaler's range, K11).
+all_ready() {
+  local ready
+  ready="$(kctl -n "$K8S_NAMESPACE" get deployment "$1" -o jsonpath='{.status.readyReplicas}/{.spec.replicas}' 2>/dev/null)"
+  [[ "$ready" =~ ^([2-4])/([2-4])$ ]] && [ "${BASH_REMATCH[1]}" = "${BASH_REMATCH[2]}" ]
+}
+# pdb_allows <name>: the PodDisruptionBudget keeps 1 pod (minAvailable) and allows evicting all the other ready ones.
+pdb_allows() {
+  local ready
+  ready="$(kctl -n "$K8S_NAMESPACE" get deployment "$1" -o jsonpath='{.status.readyReplicas}' 2>/dev/null)"
+  [ "$(kctl -n "$K8S_NAMESPACE" get pdb "$1" -o jsonpath='{.spec.minAvailable} {.status.disruptionsAllowed}' \
+    2>/dev/null)" = "1 $((${ready:-0} - 1))" ]
+}
+check "deployment $POLARIS has all of its 2-4 replicas ready" all_ready "$POLARIS"
+check "PodDisruptionBudget $POLARIS (minAvailable 1) allows evicting all but one ready replica" pdb_allows "$POLARIS"
 check "deployment $SWAGGER_UI is available" \
   quiet kctl -n "$K8S_NAMESPACE" rollout status "deployment/$SWAGGER_UI" --timeout=60s
 for route in "$POLARIS" "$POLARIS-mcp" "$SWAGGER_UI"; do
@@ -783,6 +847,7 @@ metadata:
   name: $name
   labels:
     app.kubernetes.io/name: $name
+    $SMOKE_PROBE_KEY: "true"
 spec:
   restartPolicy: Never
   automountServiceAccountToken: false
@@ -914,10 +979,8 @@ fi
 # The assistant pods run in the namespace that enforces `restricted`, so their being ready shows they pass it. Chat
 # turns call Gemini (and TypeSafe for intents), so these checks need GEMINI_API_KEY and TYPESAFE_API_KEY in the
 # untracked env file (CI writes it from repository secrets).
-check "deployment $ASSISTANT has 2 of 2 replicas ready" [ "$(kctl -n "$K8S_NAMESPACE" get deployment "$ASSISTANT" \
-  -o jsonpath='{.status.readyReplicas}/{.spec.replicas}' 2>/dev/null)" = 2/2 ]
-check "PodDisruptionBudget $ASSISTANT (minAvailable 1) allows 1 disruption" [ "$(kctl -n "$K8S_NAMESPACE" get pdb \
-  "$ASSISTANT" -o jsonpath='{.spec.minAvailable} {.status.disruptionsAllowed}' 2>/dev/null)" = "1 1" ]
+check "deployment $ASSISTANT has all of its 2-4 replicas ready" all_ready "$ASSISTANT"
+check "PodDisruptionBudget $ASSISTANT (minAvailable 1) allows evicting all but one ready replica" pdb_allows "$ASSISTANT"
 for route in "$ASSISTANT" "$ASSISTANT-api-docs"; do
   check "HTTPRoute $route is accepted by the Gateway and its backends resolve" [ "$(kctl -n "$K8S_NAMESPACE" get httproute \
     "$route" -o jsonpath="{.status.parents[0].conditions[?(@.type=='Accepted')].status} {.status.parents[0].conditions[?(@.type=='ResolvedRefs')].status}" \
@@ -994,6 +1057,7 @@ metadata:
   name: k9-chat-replicas
   labels:
     app.kubernetes.io/name: k9-chat-replicas
+    $SMOKE_PROBE_KEY: "true"
 spec:
   restartPolicy: Never
   automountServiceAccountToken: false
@@ -1183,7 +1247,7 @@ if [ -n "$ip_a" ]; then
   rm -f "$drain_out"
   log "drain probe results:"$'\n'"$out"
   check "a chat turn sent to a terminating replica ($pod_a) completes with 200" grep -qx "drain 200" <<<"$out"
-  check "deployment $ASSISTANT is back to 2 ready replicas" quiet kctl -n "$K8S_NAMESPACE" rollout status \
+  check "deployment $ASSISTANT is back to all replicas ready" quiet kctl -n "$K8S_NAMESPACE" rollout status \
     "deployment/$ASSISTANT" --timeout="${ROLLOUT_SMOKE_TIMEOUT:-600}s"
 fi
 
@@ -1292,6 +1356,236 @@ emulator_attributes() {
 }
 check "the emulator spans carry k8s.namespace.name, k8s.pod.name and k8s.deployment.name of $EMULATOR" \
   emulator_attributes "$em_block"
+
+# --- K11: hardening (NetworkPolicies, Pod Security, autoscaling, backups, node drain) --------------------------------
+# NetworkPolicies (TR-K10): the namespace denies all traffic by default (base/network-policies); every check above ran
+# under it, through the allow list of §Topology (and, for the probes, the smoke fixture). A pod outside the allow list
+# (no smoke label) resolves names but can't open a connection to polaris-db or Kafka; the same probe with the fixture
+# label can, so the refusal is the policy's. Each line: `<target> <resolved address> <open | blocked-<exit code>>`.
+check "NetworkPolicy default-deny selects every pod for ingress and egress" [ "$(kctl -n "$K8S_NAMESPACE" get \
+  networkpolicy default-deny -o jsonpath='{.spec.podSelector} {.spec.policyTypes}' 2>/dev/null)" = '{} ["Ingress","Egress"]' ]
+# shellcheck disable=SC2016 # expanded by the probe's shell, not here
+reach_script='for target in polaris-db-rw:5432 kafka-kafka-bootstrap:9092; do
+  host=${target%:*}; port=${target#*:}
+  ip=$(getent hosts "$host" | cut -d" " -f1)
+  if timeout 5 bash -c "</dev/tcp/$host/$port" 2>/dev/null; then r=open; else r=blocked-$?; fi
+  echo "$target ${ip:-unresolved} $r"
+done'
+k5_probes+=(k11-outsider k11-insider) # removed on exit too
+probe_label=false
+outsider="$(run_probe k11-outsider "$pg_image" 26 "$reach_script" || true)"
+probe_label=true
+insider="$(run_probe k11-insider "$pg_image" 26 "$reach_script" || true)"
+log "reachability without the smoke label:"$'\n'"$outsider"$'\n'"with it:"$'\n'"$insider"
+for target in polaris-db-rw:5432 kafka-kafka-bootstrap:9092; do
+  blocked() { grep -Eq "^$target [0-9.]+ blocked-" <<<"$outsider"; }
+  check "a pod outside the allow list resolves $target but can't connect to it" blocked
+  check "the same probe with the smoke fixture's label connects to $target (control)" grep -Eq "^$target [0-9.]+ open$" <<<"$insider"
+done
+
+# Pod Security `restricted` (TR-K10): the namespace has enforced it since K1, so every pod was admitted under it. A
+# server-side dry run that pins the enforce version re-evaluates every running pod of the namespace against the level
+# and warns about each one that violates it: there must be none. The same dry run on the observability namespace (the
+# accepted exception, its log agent runs as root with a hostPath) must warn, showing the evaluation does report pods.
+psa_dry_run() { # <namespace>: the API server's answer to setting enforce=restricted at the cluster's minor version
+  kctl label --dry-run=server --overwrite namespace "$1" pod-security.kubernetes.io/enforce=restricted \
+    "pod-security.kubernetes.io/enforce-version=v${KUBERNETES_VERSION%.*}" 2>&1
+}
+pods_checked="$(kctl -n "$K8S_NAMESPACE" get pods --no-headers 2>/dev/null | wc -l | tr -d ' ')"
+psa_out="$(psa_dry_run "$K8S_NAMESPACE")"
+no_violation() { [[ "$psa_out" == *"labeled"* && "$psa_out" != *"violate"* ]]; }
+check "every one of the $pods_checked pods in $K8S_NAMESPACE passes Pod Security restricted" no_violation
+[[ "$psa_out" != *"violate"* ]] || log "Pod Security warnings:"$'\n'"$psa_out"
+check "the same evaluation flags the privileged otel-agent in $OTEL_AGENT_NAMESPACE (control)" \
+  grep -q "violate" <<<"$(psa_dry_run "$OTEL_AGENT_NAMESPACE")"
+psa_out="$(psa_dry_run "$OBJECT_STORE_NAMESPACE")"
+check "every pod in $OBJECT_STORE_NAMESPACE (the object store) passes Pod Security restricted" no_violation
+
+# Autoscaling (TR-K5): an HPA per replicated app, 2 to 4 replicas on CPU, reading the pods' CPU from metrics-server.
+# ScalingActive turns True once the HPA has computed a utilization from the resource metrics API.
+check "deployment kube-system/metrics-server is available" \
+  quiet kctl -n kube-system rollout status deployment/metrics-server --timeout=60s
+for app in "$POLARIS" "$ASSISTANT"; do
+  check "HPA $app scales deployment $app from 2 to 4 replicas on CPU utilization" [ "$(kctl -n "$K8S_NAMESPACE" get hpa \
+    "$app" -o jsonpath='{.spec.scaleTargetRef.name} {.spec.minReplicas} {.spec.maxReplicas} {.spec.metrics[0].resource.name} {.spec.metrics[0].resource.target.type}' \
+    2>/dev/null)" = "$app 2 4 cpu Utilization" ]
+  deadline=$((SECONDS + ${HPA_SMOKE_TIMEOUT:-180}))
+  hpa_state=""
+  hpa_active() { [[ "$hpa_state" =~ ^True\ [0-9]+\ [2-4]$ ]]; }
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    hpa_state="$(kctl -n "$K8S_NAMESPACE" get hpa "$app" -o jsonpath="{.status.conditions[?(@.type=='ScalingActive')].status} {.status.currentMetrics[0].resource.current.averageUtilization} {.status.currentReplicas}" 2>/dev/null || true)"
+    hpa_active && break
+    sleep 5
+  done
+  read -r _ utilization replicas <<<"$hpa_state"
+  check "HPA $app reads its pods' CPU from metrics-server (ScalingActive; now ${utilization:-?}% of request, ${replicas:-?} replicas)" \
+    hpa_active
+done
+
+# Backups (D2): both Clusters archive their WAL continuously to the ObjectStore and have a base backup from their
+# ScheduledBackup (taken when it was created). Then the restore check: a row written to polaris-db is in an on-demand
+# backup, and a new Cluster bootstrapped from the object store (recovery) contains it. The rows, the backup's resource
+# and the restored Cluster are removed at the end (the backup's files stay, under the retention policy).
+check "ObjectStore cnpg-backups points at s3://$BACKUP_BUCKET/" [ "$(kctl -n "$K8S_NAMESPACE" get \
+  objectstore.barmancloud.cnpg.io cnpg-backups -o jsonpath='{.spec.configuration.destinationPath}' 2>/dev/null)" = "s3://$BACKUP_BUCKET/" ]
+check "deployment $CNPG_NAMESPACE/$BARMAN_CLOUD_RELEASE (Barman Cloud plugin) is available" \
+  quiet kctl -n "$CNPG_NAMESPACE" rollout status "deployment/$BARMAN_CLOUD_RELEASE" --timeout=60s
+check "deployment $OBJECT_STORE_NAMESPACE/$OBJECT_STORE_DEPLOYMENT (object store) is available" \
+  quiet kctl -n "$OBJECT_STORE_NAMESPACE" rollout status "deployment/$OBJECT_STORE_DEPLOYMENT" --timeout=60s
+backup_phases() { # <cluster>: the phase of each of its Backups
+  kctl -n "$K8S_NAMESPACE" get backups.postgresql.cnpg.io \
+    -o jsonpath="{range .items[?(@.spec.cluster.name=='$1')]}{.status.phase}{'\n'}{end}" 2>/dev/null
+}
+backup_timeout="${BACKUP_SMOKE_TIMEOUT:-300}"
+for cluster in "${PG_CLUSTERS[@]}"; do
+  check "ScheduledBackup $cluster-nightly uses the Barman Cloud plugin" [ "$(kctl -n "$K8S_NAMESPACE" get \
+    scheduledbackups.postgresql.cnpg.io "$cluster-nightly" -o jsonpath='{.spec.cluster.name} {.spec.method}' 2>/dev/null)" = "$cluster plugin" ]
+  deadline=$((SECONDS + backup_timeout))
+  archiving="" completed=""
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    archiving="$(COND=ContinuousArchiving cond -n "$K8S_NAMESPACE" cluster.postgresql.cnpg.io "$cluster")"
+    completed="$(backup_phases "$cluster" | grep -cx completed || true)"
+    if is_true "$archiving" && [ "${completed:-0}" -gt 0 ]; then break; fi
+    sleep 5
+  done
+  check "$cluster archives its WAL to the object store (ContinuousArchiving)" is_true "$archiving"
+  check "$cluster has a completed base backup from its ScheduledBackup" [ "${completed:-0}" -gt 0 ]
+done
+
+restore_cluster=polaris-db-restore
+backup_token="k11-$(hex 8)"
+backup_name="polaris-db-k11-$(hex 4)"
+pg_primary() { kctl -n "$K8S_NAMESPACE" get cluster.postgresql.cnpg.io polaris-db -o jsonpath='{.status.currentPrimary}' 2>/dev/null; }
+pg_exec() { # <pod> <sql...>: psql as the local superuser inside a PostgreSQL pod (no network involved)
+  local pod="$1"
+  shift
+  local args=()
+  for sql in "$@"; do args+=(-c "$sql"); done
+  kctl -n "$K8S_NAMESPACE" exec "$pod" -c postgres -- psql -d polaris -v ON_ERROR_STOP=1 -qAt "${args[@]}" 2>&1
+}
+# shellcheck disable=SC2329 # invoked by the EXIT trap
+cleanup_k11() {
+  kctl -n "$K8S_NAMESPACE" delete cluster.postgresql.cnpg.io "$restore_cluster" --ignore-not-found --wait=false >/dev/null 2>&1 || true
+  kctl -n "$K8S_NAMESPACE" delete backup.postgresql.cnpg.io "$backup_name" --ignore-not-found --wait=false >/dev/null 2>&1 || true
+}
+trap 'cleanup; cleanup_k8; cleanup_k9; cleanup_k11' EXIT
+if out="$(pg_exec "$(pg_primary)" 'CREATE SCHEMA IF NOT EXISTS k11_smoke' \
+  'CREATE TABLE IF NOT EXISTS k11_smoke.rows (token text PRIMARY KEY)' \
+  "INSERT INTO k11_smoke.rows VALUES ('$backup_token') RETURNING 'written', token")" &&
+  grep -qx "written|$backup_token" <<<"$out"; then
+  pass "a row was written to polaris-db before the backup"
+else
+  fail "could not write the backup row to polaris-db: $(tail -3 <<<"$out")"
+fi
+kctl -n "$K8S_NAMESPACE" apply -f - >/dev/null <<EOF
+apiVersion: postgresql.cnpg.io/v1
+kind: Backup
+metadata:
+  name: $backup_name
+spec:
+  cluster:
+    name: polaris-db
+  method: plugin
+  pluginConfiguration:
+    name: barman-cloud.cloudnative-pg.io
+EOF
+deadline=$((SECONDS + backup_timeout))
+phase=""
+while [ "$SECONDS" -lt "$deadline" ]; do
+  phase="$(kctl -n "$K8S_NAMESPACE" get backup.postgresql.cnpg.io "$backup_name" -o jsonpath='{.status.phase}' 2>/dev/null || true)"
+  case "$phase" in completed | failed) break ;; esac
+  sleep 5
+done
+check "an on-demand backup of polaris-db ($backup_name) completed (phase '$phase')" [ "$phase" = completed ]
+
+# The restored Cluster: one instance, the same image, bootstrapped from polaris-db's backups and WAL in the object
+# store (recovery to the end of the archived WAL). Its owner role and database come from the backup.
+kctl -n "$K8S_NAMESPACE" apply -f - >/dev/null <<EOF
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: $restore_cluster
+  labels:
+    app.kubernetes.io/name: $restore_cluster
+spec:
+  instances: 1
+  imageName: $pg_image
+  enablePDB: false
+  bootstrap:
+    recovery:
+      source: polaris-db
+      database: polaris
+      owner: polaris
+  externalClusters:
+    - name: polaris-db
+      plugin:
+        name: barman-cloud.cloudnative-pg.io
+        parameters:
+          barmanObjectName: cnpg-backups
+          serverName: polaris-db
+  storage:
+    size: 2Gi
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 1Gi
+EOF
+if quiet kctl -n "$K8S_NAMESPACE" wait --for=condition=Ready "cluster.postgresql.cnpg.io/$restore_cluster" \
+  --timeout="${RESTORE_SMOKE_TIMEOUT:-600}s"; then
+  pass "Cluster $restore_cluster bootstrapped from the object store (recovery) is ready"
+  restored="$(pg_exec "$restore_cluster-1" "SELECT 'restored', token FROM k11_smoke.rows WHERE token = '$backup_token'")"
+  check "the restored Cluster contains the row written before the backup" grep -qx "restored|$backup_token" <<<"$restored"
+else
+  fail "Cluster $restore_cluster did not become ready from the backup: $(kctl -n "$K8S_NAMESPACE" get \
+    cluster.postgresql.cnpg.io "$restore_cluster" -o jsonpath='{.status.phase}: {.status.phaseReason}' 2>&1)"
+fi
+cleanup_k11
+pg_exec "$(pg_primary)" 'DROP SCHEMA IF EXISTS k11_smoke CASCADE' >/dev/null || true
+
+# Node drain (TR-K5): api-test.js runs open-ended while the kind worker, which holds one replica of polaris and of the
+# assistant (topology spread), is drained. The Eviction API honours the PodDisruptionBudgets, the evicted replicas
+# reschedule onto the control plane (the cordoned worker no longer counts for the spread), and each evicted pod drains
+# like a rolling restart (readiness, preStop, graceful shutdown). No request may get a 5xx or lose its connection.
+worker="$(kctl get nodes -l "$STATELESS_POOL_LABEL" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
+on_worker() { # <app>: its pods on the worker
+  kctl -n "$K8S_NAMESPACE" get pods -l "app.kubernetes.io/name=$1" --field-selector "spec.nodeName=$worker" \
+    -o jsonpath='{.items[*].metadata.name}' 2>/dev/null
+}
+if [ -z "$worker" ]; then
+  fail "no kind worker labelled $STATELESS_POOL_LABEL to drain: recreate the cluster from deploy/k8s/kind/cluster.yaml (make k8s-down k8s-up)"
+else
+  evicted="$(on_worker "$POLARIS")"
+  check "the worker $worker runs a polaris replica (topology spread): ${evicted:-none}" [ -n "$evicted" ]
+  k5_probes+=(k11-drain) # removed on exit too
+  start_k6 k11-drain "--no-thresholds -e DURATION=20m"
+  if kctl -n "$K8S_NAMESPACE" wait --for=condition=Ready pod/k11-drain --timeout=120s >/dev/null 2>&1; then
+    sleep 10
+    log "draining $worker under load (polaris pods there: $evicted)"
+    drained_node="$worker"
+    if drain_out="$(kctl drain "$worker" --ignore-daemonsets --delete-emptydir-data --timeout="${DRAIN_SMOKE_TIMEOUT:-300}s" 2>&1)"; then
+      pass "kubectl drain $worker evicted its pods within the PodDisruptionBudgets"
+    else
+      fail "kubectl drain $worker failed: $(tail -5 <<<"$drain_out")"
+    fi
+    log "drain:"$'\n'"$(grep -E "evicting|evicted|drained|error" <<<"$drain_out" || true)"
+    for app in "$POLARIS" "$ASSISTANT"; do
+      check "deployment $app is back to all replicas ready, off the drained worker" quiet kctl -n "$K8S_NAMESPACE" \
+        rollout status "deployment/$app" --timeout="${ROLLOUT_SMOKE_TIMEOUT:-600}s"
+      check "no $app pod is left on the drained worker" [ -z "$(on_worker "$app")" ]
+    done
+    sleep 15
+    quiet kctl -n "$K8S_NAMESPACE" exec k11-drain -- touch /tmp/stop || true
+    out="$(wait_k6 k11-drain 120 || true)"
+    log "api-test.js during the drain:"$'\n'"$(grep -E "checks|http_reqs|✗|server-errors" <<<"$out" || true)"
+    check "api-test.js ran during the drain" grep -Eq "http_reqs[ .:]+[1-9]" <<<"$out"
+    check "no request got a 5xx or lost its connection while $worker was drained" grep -qx "server-errors 0" <<<"$out"
+    quiet kctl uncordon "$worker" && drained_node=""
+  else
+    fail "the k6 pod for the drain did not start: $(kctl -n "$K8S_NAMESPACE" describe pod k11-drain 2>&1 | tail -5)"
+  fi
+fi
 
 if [ "$failures" -gt 0 ]; then
   log "$failures smoke check(s) failed"

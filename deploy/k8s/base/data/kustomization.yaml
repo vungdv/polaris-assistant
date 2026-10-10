@@ -10,3 +10,4 @@ namespace: polaris
 resources:
   - polaris-db.yaml
   - keycloak-db.yaml
+  - backup.yaml

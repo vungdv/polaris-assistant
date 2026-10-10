@@ -1,0 +1,6 @@
+# The object store's namespace (K11). Applied by scripts/k8s/platform.sh before the SeaweedFS Helm release
+# (values.yaml); validated by scripts/k8s/validate.sh.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespace.yaml

@@ -1,0 +1,31 @@
+# NetworkPolicies of the `polaris` namespace (K11, TR-K10): everything is denied in both directions (default-deny.yaml)
+# except DNS and the flows of the plan's §Topology, each allowed on both of its ends: the caller's egress rule and the
+# callee's ingress rule, on the callee's container port. One file per component; each policy selects that component's
+# pods by the labels its owner (Kustomize base, Helm chart or operator) sets.
+#
+# Outside the namespace, only the ends that need a rule here are named: CoreDNS (kube-system), the operators that
+# manage pods in this namespace (cnpg-system, strimzi), the Gateway control plane (nginx-gateway), the log agent
+# (observability), the object store (object-store), the Kubernetes API server and the external HTTPS APIs. The
+# operators' own namespaces carry no policies.
+#
+# The API server and the external APIs (Gemini, TypeSafe, Grafana Cloud) have no pods to select. NetworkPolicy can
+# name them only by address, so:
+#   - the API server is TCP 6443 on any address (kind's and kubeadm's port). Its endpoint is a per-cluster node
+#     address; a cloud overlay narrows the rule to the control plane's CIDR and port.
+#   - an external API is TCP 443 to any address outside the private ranges (RFC 1918). NetworkPolicy has no host
+#     names, so the rule can't tell Gemini from any other public HTTPS host.
+# Kubelet probes come from the node itself, which kind's NetworkPolicy implementation (kindnet) doesn't police.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: polaris
+resources:
+  - default-deny.yaml
+  - edge.yaml
+  - polaris.yaml
+  - polaris-assistant.yaml
+  - polaris-fulfilment-emulator.yaml
+  - swagger-ui.yaml
+  - identity.yaml
+  - data.yaml
+  - kafka.yaml
+  - observability.yaml

@@ -1,0 +1,14 @@
+# The in-cluster object store's namespace (K11, values.yaml), with Pod Security `restricted` as the app namespace
+# (TR-K10). The PostgreSQL pods in `polaris` reach its S3 port through an egress rule there
+# (base/network-policies/data.yaml).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: object-store
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/warn-version: latest
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/audit-version: latest

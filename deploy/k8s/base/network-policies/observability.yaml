@@ -1,0 +1,63 @@
+# The OpenTelemetry Collector (K4). Receives OTLP/HTTP (4318) from the three apps, OTLP/gRPC (4317) from Keycloak, the
+# Gateway and the log agent (namespace observability); reads pod metadata from the Kubernetes API (k8s_attributes); and
+# exports to Grafana Cloud over HTTPS when its credentials are set (D8).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: otel-collector
+  labels:
+    app.kubernetes.io/part-of: polaris
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: otel-collector
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: polaris
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: polaris-assistant
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: polaris-fulfilment-emulator
+      ports:
+        - protocol: TCP
+          port: 4318
+    - from:
+        - podSelector:
+            matchLabels:
+              app: keycloak
+              app.kubernetes.io/component: server
+        - podSelector:
+            matchLabels:
+              gateway.networking.k8s.io/gateway-name: polaris
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: otel-agent
+      ports:
+        - protocol: TCP
+          port: 4317
+  egress:
+    # The Kubernetes API (see kustomization.yaml).
+    - ports:
+        - protocol: TCP
+          port: 6443
+    # Grafana Cloud's OTLP gateway (see kustomization.yaml: any public address on 443).
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443

@@ -26,3 +26,16 @@ patches:
       - op: add
         path: /spec/enablePDB
         value: false
+  # Node drain (K11): polaris and polaris-assistant, the replicated stateless apps, also run on the kind worker, whose
+  # taint keeps every other pod off it (kind/cluster.yaml). Their topology spread puts one replica on each node.
+  - target:
+      kind: Deployment
+      name: polaris|polaris-assistant
+    patch: |-
+      - op: add
+        path: /spec/template/spec/tolerations
+        value:
+          - key: polaris.local/pool
+            operator: Equal
+            value: stateless-apps
+            effect: NoSchedule

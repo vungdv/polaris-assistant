@@ -5,9 +5,9 @@ Manifests and tooling for running Polaris on Kubernetes ([ADR-0021](../../docs/t
 | Path | Contents |
 |:--|:--|
 | `versions.env` | Pinned versions of kind, its node image, kubectl, kubeconform, helm, the schema catalogs and the platform charts |
-| `kind/cluster.yaml` | Local kind cluster: host ports 80/443 → NodePorts 30080/30443 |
-| `platform/` | Helm values and CRs for third-party components: cert-manager, trust-manager, NGINX Gateway Fabric, the cluster PKI (`pki/`), the CoreDNS rewrite (`coredns/`), the OpenTelemetry Collector (`otel-collector/`) and its log agent (`otel-agent/`), the CloudNativePG operator (`cloudnative-pg/`), the Strimzi operator (`strimzi/`), the Keycloak Operator (`keycloak-operator/`: patches over its upstream release manifests) |
-| `base/` | Cluster-agnostic manifests: the `polaris` namespace (Pod Security `restricted`), then one directory per component (`edge/`: Gateway, certificate, HTTP redirect, tracing policy; `data/`: PostgreSQL Clusters; `redis/`; `kafka/`: the Kafka cluster; `keycloak/`: the Keycloak server and its HTTPRoute; `polaris/`: the Order & Catalog service and its HTTPRoutes; `polaris-assistant/`: the assistant and its HTTPRoutes; `polaris-fulfilment-emulator/`: the fulfilment emulator, no route; `swagger-ui/`) |
+| `kind/cluster.yaml` | Local kind cluster: host ports 80/443 → NodePorts 30080/30443; a control plane that runs every workload and a tainted worker for the stateless apps (K11) |
+| `platform/` | Helm values and CRs for third-party components: cert-manager, trust-manager, NGINX Gateway Fabric, the cluster PKI (`pki/`), the CoreDNS rewrite (`coredns/`), the OpenTelemetry Collector (`otel-collector/`) and its log agent (`otel-agent/`), the CloudNativePG operator (`cloudnative-pg/`), the Strimzi operator (`strimzi/`), the Keycloak Operator (`keycloak-operator/`: patches over its upstream release manifests), metrics-server (`metrics-server/`), the CNPG Barman Cloud plugin (`barman-cloud/`) and the backups' object store (`object-store/`) |
+| `base/` | Cluster-agnostic manifests: the `polaris` namespace (Pod Security `restricted`), then one directory per component (`edge/`: Gateway, certificate, HTTP redirect, tracing policy; `data/`: PostgreSQL Clusters; `redis/`; `kafka/`: the Kafka cluster; `keycloak/`: the Keycloak server and its HTTPRoute; `polaris/`: the Order & Catalog service and its HTTPRoutes; `polaris-assistant/`: the assistant and its HTTPRoutes; `polaris-fulfilment-emulator/`: the fulfilment emulator, no route; `swagger-ui/`; `network-policies/`: default-deny and the §Topology allow list) |
 | `overlays/local/` | The kind environment: image tags, replica counts, Secrets from the untracked `deploy/k8s/.env.local` |
 | `overlays/local/realms/` | Generated and untracked: the Kustomize component that imports `docker/keycloak/*.json` (KeycloakRealmImport `polaris-realm`, ConfigMap `keycloak-master-realm`) |
 | `overlays/local/images/` | Generated and untracked: the Kustomize component that pins each app image to `ghcr.io/<owner>/<app>:<git-sha>` of the current checkout |
@@ -372,3 +372,62 @@ only API is actuator, reachable in-cluster on Service `polaris-fulfilment-emulat
   - An order placed through the Gateway with a fresh `traceparent`: the Collector holds an emulator span that is the
     child of a polaris span of that trace (across Kafka), and a polaris span that is the child of an emulator span (the
     claim).
+
+## Hardening: NetworkPolicies, autoscaling, disruption, backups
+
+**NetworkPolicies (TR-K10).** `base/network-policies/` denies all ingress and egress in the `polaris` namespace
+(`default-deny`), allows DNS to CoreDNS for every pod, and then allows exactly the flows of the plan's §Topology, each
+on both ends (the caller's egress, the callee's ingress, on the callee's container port), one file per component:
+
+| Policy | Ingress from | Egress to |
+|:--|:--|:--|
+| `gateway` (NGF data plane) | anywhere, 80/443 (north–south entry, NodePort and in-cluster `*.polaris.local`) | polaris and Swagger UI 8080, the assistant 8081, Keycloak 8080, the Collector 4317, the NGF control plane (`nginx-gateway`) 8443 |
+| `polaris` | the Gateway, the assistant, the emulator: 8080 | polaris-db 5432, Redis 6379, Kafka 9092, the Collector 4318, the Gateway 443 (JWKS) |
+| `polaris-assistant` | the Gateway: 8081 | polaris 8080, polaris-db 5432, Redis 6379, the Collector 4318, the Gateway 443, public HTTPS (Gemini, TypeSafe) |
+| `polaris-fulfilment-emulator` | nothing | Kafka 9092, polaris 8080, the Gateway 443 (token), the Collector 4318 |
+| `swagger-ui` | the Gateway: 8080 | nothing |
+| `keycloak`, `keycloak-operator`, `keycloak-realm-import` | the Gateway: 8080 (server only) | keycloak-db 5432 and the Collector 4317 (server); the API server (operator); keycloak-db 5432 (import Job) |
+| `cnpg-pods`, `polaris-db`, `keycloak-db` | the apps (polaris-db: polaris, assistant; keycloak-db: Keycloak, import Job) 5432; own instances 5432/8000; the CNPG operator 8000 | own instances; the API server; the object store's S3 port 8333 |
+| `redis` | polaris, the assistant: 6379 | nothing |
+| `kafka` | polaris, the emulator: 9092; the nodes: 9090-9092; the Strimzi operator: 9090, 9091, 8443 | the nodes: 9090-9092 |
+| `otel-collector` | the apps 4318; Keycloak, the Gateway, the log agent (`observability`) 4317 | the API server; public HTTPS (Grafana Cloud) |
+
+The API server and the external APIs have no pods to select: the API server is TCP 6443 on any address (a cloud overlay
+narrows it to the control plane's CIDR), an external API is TCP 443 on any public address (NetworkPolicy has no host
+names). kind enforces NetworkPolicies with kindnet; kubelet probes come from the node and aren't policed.
+
+**Pod Security.** Every pod of `polaris` passes `restricted`, which the namespace has enforced since K1; the object
+store's namespace enforces it too. The smoke test re-evaluates the running pods with a server-side dry run.
+
+**Autoscaling (TR-K5).** `make k8s-up` installs metrics-server (`platform/metrics-server`, `--kubelet-insecure-tls`
+for kind's self-signed kubelet certificates). `polaris` and `polaris-assistant` each have an HPA (`hpa.yaml`): 2 to 4
+replicas at 80% of the CPU request, a scale-up only after 3 minutes of sustained load (a JVM's start-up burst doesn't
+count), one replica a minute.
+
+**Disruption.** The kind cluster has two nodes (`kind/cluster.yaml`): the control plane runs every workload, and a
+worker, tainted `polaris.local/pool=stateless-apps:NoSchedule`, runs only polaris and the assistant
+(`overlays/local` adds the toleration). Their `topologySpreadConstraints` put one replica on each node, and ignore a
+cordoned node, so `kubectl drain` of the worker evicts one replica of each within the PodDisruptionBudgets and they
+reschedule onto the control plane. The stateful pods stay on the control plane: their volumes are node-local. A cluster
+created before K11 has one node; recreate it (`make k8s-down k8s-up`) for the drain check.
+
+**Backups (D2).** Both Clusters list the CloudNativePG Barman Cloud plugin (`platform/barman-cloud`, next to the CNPG
+operator) as their WAL archiver, and `base/data/backup.yaml` declares the shared ObjectStore `cnpg-backups` (7-day
+retention) and a nightly ScheduledBackup per Cluster, which also takes one backup as soon as it is created. The bucket
+is on an in-cluster S3-compatible store, SeaweedFS all-in-one (`platform/object-store`, namespace `object-store`, on a
+PersistentVolumeClaim). `make k8s-up` generates its S3 credentials once and keeps them: Secret
+`object-store/object-store-s3-config` (the identity, limited to the bucket) and `polaris/object-store-credentials` (what
+the ObjectStore signs with). To restore, create a Cluster with `bootstrap.recovery.source` naming an external cluster
+whose `plugin` is `barman-cloud.cloudnative-pg.io` with `barmanObjectName: cnpg-backups` and `serverName` the source
+Cluster (the smoke test's `polaris-db-restore` is an example).
+
+**Smoke.** The probe pods of `make k8s-smoke` carry `polaris.local/smoke-probe=true`, and for the run only a fixture
+policy lets them reach any pod of the namespace (removed on exit). On top of that, the K11 checks:
+- A probe without that label resolves `polaris-db-rw` and `kafka-kafka-bootstrap` but can't connect; with it, it can.
+- A dry run of the namespace's `restricted` label reports no violating pod (in `polaris` and `object-store`), while the
+  same dry run flags the privileged log agent in `observability`.
+- Both HPAs target their Deployment, 2-4 replicas on CPU, and read their pods' CPU from metrics-server.
+- Both Clusters report `ContinuousArchiving` and have a completed scheduled backup. A row written to polaris-db is in
+  an on-demand backup, and a new Cluster recovered from the object store contains it.
+- `api-test.js` runs while the worker is drained: its polaris and assistant replicas move to the control plane, and
+  no request gets a 5xx or loses its connection.

@@ -11,3 +11,4 @@ resources:
   - polaris-assistant
   - polaris-fulfilment-emulator
   - swagger-ui
+  - network-policies
