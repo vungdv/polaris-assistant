@@ -104,7 +104,7 @@ Slices run top to bottom; only the `execute-plan` coordinator edits this table.
 | 7 | K7 | Identity: Keycloak | `done` | — | `k8s/k7-keycloak` | [#13](https://github.com/vungdv/polaris-assistant/pull/13) | Merged 7b51ebe |
 | 8 | K8 | Order & Catalog (`polaris`) and Swagger UI | `done` | — | `k8s/k8-polaris` | [#16](https://github.com/vungdv/polaris-assistant/pull/16) | Merged 0f9dcfa |
 | 9 | K9 | Assistant (`polaris-assistant`) | `done` | Gemini and TypeSafe API keys available to CI as secrets | `k8s/k9-assistant` | [#17](https://github.com/vungdv/polaris-assistant/pull/17) | Merged aac954d |
-| 10 | K10 | Fulfilment (`polaris-fulfilment-emulator`) | `todo` | — | | | |
+| 10 | K10 | Fulfilment (`polaris-fulfilment-emulator`) | `in-progress` | — | | | |
 | 11 | K11 | Hardening: NetworkPolicies, autoscaling, disruption, backups | `todo` | — | | | |
 | 12 | K12 | Local LGTM stack and runbook | `todo` | — | | | |
 
