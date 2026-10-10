@@ -183,7 +183,8 @@ Slices run top to bottom; only the `execute-plan` coordinator edits this table.
 ### K10: Fulfilment (`polaris-fulfilment-emulator`)
 **Covers:** TR-K3, TR-K4, TR-K9 for the fulfilment context.
 - Deployment (1 replica, as today: one consumer group per partner) with no `HTTPRoute`, so actuator is in-cluster only. Kafka bootstrap points at the Strimzi bootstrap Service. The token endpoint goes through `id.polaris.local`, and the client secret comes from the shared Secret used by the realm import. The client secret is read from Secret `keycloak-realm-placeholders` (never the Compose default), and `POLARIS_FULFILMENT_EMULATOR_SECRET` is added to `.env.template`.
-- Smoke: `tests/e2e/run-fulfilment.sh` runs against the cluster: an order placed through the Gateway reaches `DISPATCHED` → shipped, and one trace continues across Kafka.
+- A `wait-for-polaris` init container, as in K9, mirrors Compose's `depends_on: polaris: service_healthy`: polaris provisions the order lifecycle topic (D10) and serves the claims.
+- Smoke: `tests/e2e/run-fulfilment.sh` runs against the cluster: an order placed through the Gateway reaches `DELIVERED` with an assigned partner, its five `order.*.v1` events are on `polaris.order.lifecycle` in order, and one trace continues across Kafka.
 
 ### K11: Hardening: NetworkPolicies, autoscaling, disruption, backups
 **Covers:** TR-K5, TR-K10, D2 (backups).
@@ -221,3 +222,4 @@ Slices run top to bottom; only the `execute-plan` coordinator edits this table.
 | 2026-10-07 | TR-K6 records Kafka 4.1.1 on Kubernetes as an accepted deviation; Compose moves to 4.1.x in a separate change. K6 documents that there is no host Kafka listener on kind | Findings from the K6 review | K6 |
 | 2026-10-08 | D4/K7: master realm imported by the server at first start; only polaris uses KeycloakRealmImport. K9 seed-shoppers and K12 runbook use the operator bootstrap admin and grafana-admin. K10 reads the emulator secret from keycloak-realm-placeholders and adds it to .env.template. K11 adds Keycloak operator, import Job and NGF→Keycloak edges; TR-K10 records the operator Secret access as accepted | Findings from the K7 review | K7, K9, K10, K11, K12 |
 | 2026-10-10 | K9 records the `wait-for-polaris` init container (Compose `depends_on: service_healthy` equivalent, orders `ddl-auto` after Flyway). The `ddl-auto` follow-up risk adds the two-replica first-start `CREATE TABLE` race | Findings from the K9 review | K9 |
+| 2026-10-10 | K10 smoke checks `DELIVERED` plus the five `order.*.v1` events (there is no `DISPATCHED` status). K10 records the `wait-for-polaris` init container | Findings from implementing and reviewing K10 | K10 |
