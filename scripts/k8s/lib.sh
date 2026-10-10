@@ -65,6 +65,12 @@ export KUBECONFIG="$K8S_KUBECONFIG"
   ASSISTANT_SECRET=polaris-assistant
   ASSISTANT_SECRET_KEYS=(GEMINI_API_KEY TYPESAFE_API_KEY AGENTO11Y_PROTOCOL AGENTO11Y_ENDPOINT AGENTO11Y_AUTH_MODE
     AGENTO11Y_AUTH_TENANT_ID AGENTO11Y_AUTH_TOKEN)
+  # Fulfilment (K10): Deployment and Service `polaris-fulfilment-emulator` (base/polaris-fulfilment-emulator), one Kafka
+  # consumer group per partner (EMULATOR_GROUP_PREFIX<partner>). Its client secret is POLARIS_FULFILMENT_EMULATOR_SECRET
+  # in KEYCLOAK_REALM_SECRET.
+  EMULATOR=polaris-fulfilment-emulator
+  EMULATOR_GROUP_PREFIX=fulfilment.
+  EMULATOR_PARTNERS=(partner-north partner-central partner-south)
 }
 # kafka_pod <node id>: the pod name of a Kafka node.
 kafka_pod() { printf '%s-%s-%s' "$KAFKA_CLUSTER" "$KAFKA_NODE_POOL" "$1"; }

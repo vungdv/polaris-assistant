@@ -1,0 +1,12 @@
+# Fulfilment (K10): the `polaris-fulfilment-emulator` Deployment (1 replica), its ConfigMap and its in-cluster Service.
+# No HTTPRoute: actuator is in-cluster only. Needs what earlier slices deploy: Kafka (K6), Keycloak behind
+# id.polaris.local and the Secret keycloak-realm-placeholders (K7), polaris (K8), the trust bundle polaris-ca-bundle
+# (K3) and the Collector (K4). No credential is committed (TR-K3). The image is named `polaris-fulfilment-emulator`;
+# overlays pin it to ghcr.io/<owner>/polaris-fulfilment-emulator:<git-sha> (K2).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: polaris
+resources:
+  - configmap.yaml
+  - deployment.yaml
+  - service.yaml

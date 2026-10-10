@@ -1,0 +1,16 @@
+# In-cluster address of the emulator's actuator: http://polaris-fulfilment-emulator:8082. The emulator has no API
+# beyond actuator (TR-F4) and no HTTPRoute, so actuator is reachable only inside the cluster, as on Compose's network.
+apiVersion: v1
+kind: Service
+metadata:
+  name: polaris-fulfilment-emulator
+  labels:
+    app.kubernetes.io/name: polaris-fulfilment-emulator
+    app.kubernetes.io/part-of: polaris
+spec:
+  selector:
+    app.kubernetes.io/name: polaris-fulfilment-emulator
+  ports:
+    - name: http
+      port: 8082
+      targetPort: http

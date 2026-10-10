@@ -7,7 +7,7 @@ Manifests and tooling for running Polaris on Kubernetes ([ADR-0021](../../docs/t
 | `versions.env` | Pinned versions of kind, its node image, kubectl, kubeconform, helm, the schema catalogs and the platform charts |
 | `kind/cluster.yaml` | Local kind cluster: host ports 80/443 → NodePorts 30080/30443 |
 | `platform/` | Helm values and CRs for third-party components: cert-manager, trust-manager, NGINX Gateway Fabric, the cluster PKI (`pki/`), the CoreDNS rewrite (`coredns/`), the OpenTelemetry Collector (`otel-collector/`) and its log agent (`otel-agent/`), the CloudNativePG operator (`cloudnative-pg/`), the Strimzi operator (`strimzi/`), the Keycloak Operator (`keycloak-operator/`: patches over its upstream release manifests) |
-| `base/` | Cluster-agnostic manifests: the `polaris` namespace (Pod Security `restricted`), then one directory per component (`edge/`: Gateway, certificate, HTTP redirect, tracing policy; `data/`: PostgreSQL Clusters; `redis/`; `kafka/`: the Kafka cluster; `keycloak/`: the Keycloak server and its HTTPRoute; `polaris/`: the Order & Catalog service and its HTTPRoutes; `polaris-assistant/`: the assistant and its HTTPRoutes; `swagger-ui/`) |
+| `base/` | Cluster-agnostic manifests: the `polaris` namespace (Pod Security `restricted`), then one directory per component (`edge/`: Gateway, certificate, HTTP redirect, tracing policy; `data/`: PostgreSQL Clusters; `redis/`; `kafka/`: the Kafka cluster; `keycloak/`: the Keycloak server and its HTTPRoute; `polaris/`: the Order & Catalog service and its HTTPRoutes; `polaris-assistant/`: the assistant and its HTTPRoutes; `polaris-fulfilment-emulator/`: the fulfilment emulator, no route; `swagger-ui/`) |
 | `overlays/local/` | The kind environment: image tags, replica counts, Secrets from the untracked `deploy/k8s/.env.local` |
 | `overlays/local/realms/` | Generated and untracked: the Kustomize component that imports `docker/keycloak/*.json` (KeycloakRealmImport `polaris-realm`, ConfigMap `keycloak-master-realm`) |
 | `overlays/local/images/` | Generated and untracked: the Kustomize component that pins each app image to `ghcr.io/<owner>/<app>:<git-sha>` of the current checkout |
@@ -17,6 +17,7 @@ Manifests and tooling for running Polaris on Kubernetes ([ADR-0021](../../docs/t
 | `make k8s-up` | Installs the pinned tools into `.tools/bin`, creates the kind cluster `polaris` if missing, installs the platform components (`scripts/k8s/platform.sh`), applies `overlays/local` and waits for the edge, the data stores, Kafka, Keycloak and the apps whose images are loaded |
 | `make k8s-images` | Builds the three app images as `ghcr.io/vungdv/<app>:<git-sha>` and loads them into the cluster with `kind load docker-image` (`APPS=polaris` for a subset) |
 | `make k8s-smoke` | Runs `scripts/k8s/smoke.sh` against the cluster |
+| `make k8s-e2e-fulfilment` | Runs the fulfilment e2e (`tests/e2e/run-fulfilment.sh`, as `make e2e-fulfilment` on Compose) through the cluster's Gateway, and checks the order events inside a Kafka node |
 | `make k8s-down` | Deletes the cluster |
 | `make k8s-kafka-topics`, `-tail`, `-cluster`, `-offsets`, `-groups`, `-leaders` | The Kafka admin commands of `make kafka-*`, run in a Kafka node with `kubectl exec` (`scripts/k8s/kafka.sh`; `TOPIC=`, `NODE=1..3`) |
 | `make k8s-validate` | Renders every overlay and platform kustomization and validates it with kubeconform, and renders each platform chart with its values (no cluster needed) |
@@ -340,3 +341,34 @@ operator's post-import restart has finished.
   - A chat turn sent straight to a replica that is already terminating completes with 200, and the Deployment is back
     to 2 ready replicas.
 
+## Fulfilment (`polaris-fulfilment-emulator`)
+
+`base/polaris-fulfilment-emulator/` runs Compose's `polaris-fulfilment-emulator` service. It has no HTTPRoute: its
+only API is actuator, reachable in-cluster on Service `polaris-fulfilment-emulator:8082`.
+
+| Compose | Kubernetes |
+|:--|:--|
+| `polaris-fulfilment-emulator` container, `environment:` | Deployment `polaris-fulfilment-emulator` (1 replica, as on Compose: one consumer group `fulfilment.<partner>` per partner), ConfigMap `polaris-fulfilment-emulator` (`envFrom`), Service `polaris-fulfilment-emulator:8082` |
+| `SPRING_KAFKA_BOOTSTRAP_SERVERS` `kafka-1:9092,...` | The Strimzi bootstrap Service `kafka-kafka-bootstrap:9092` |
+| `POLARIS_FULFILMENT_TOKEN_URI` on `https://id.polaris.local` | The same public issuer, which CoreDNS rewrites to the Gateway (TR-K8) |
+| `POLARIS_FULFILMENT_EMULATOR_SECRET` (default `fulfilment-emulator-dev-secret`) | `secretKeyRef` to Secret `keycloak-realm-placeholders`, the value the realm import put into the emulator's Keycloak client (K7). No default: `make k8s-up` takes it from `deploy/k8s/.env.local` or generates it at random |
+| `depends_on: polaris: service_healthy` | Init container `wait-for-polaris`: polaris owns the order lifecycle topic the emulator consumes (D10) and serves its claims |
+| healthcheck on liveness + readiness | `startupProbe`/`livenessProbe` on `/actuator/health/liveness`, `readinessProbe` on `/actuator/health/readiness` |
+| `user: root` | UID/GID 10001, read-only root filesystem, `emptyDir` on `/tmp`, no capabilities, seccomp `RuntimeDefault` |
+
+- **Image.** As for polaris: `make k8s-images APPS=polaris-fulfilment-emulator`, then `make k8s-up` again.
+- **Lifecycle (TR-K4).** The 20s graceful-shutdown phase also stops the Kafka listeners. With the 5s `preStop` sleep,
+  `terminationGracePeriodSeconds` is 30 (5 + 20 + 5s margin). Requests 100m CPU and 256Mi, limits 1 CPU and 512Mi.
+- **Telemetry (TR-K9).** OTLP to the Collector, with the pod's Kubernetes attributes. Each order event carries the
+  trace context of the request that placed the order, so the emulator's consumer span continues that trace across
+  Kafka, and its claim call carries it back to polaris.
+- **Smoke.** `make k8s-smoke` checks the following:
+  - 1/1 replica is ready, no HTTPRoute routes to the emulator, its secret comes from `keycloak-realm-placeholders` and
+    isn't Compose's default, it bootstraps from the Strimzi Service, and liveness and readiness answer in-cluster.
+  - The three partner consumer groups are `Stable`.
+  - `make k8s-e2e-fulfilment` passes from the host through the Gateway: an order and a batch of 10 placed as
+    `alice.tran` all reach `DELIVERED` with an assigned partner, more than one partner wins, and each order's five
+    `order.*.v1` events are on `polaris.order.lifecycle` in order.
+  - An order placed through the Gateway with a fresh `traceparent`: the Collector holds an emulator span that is the
+    child of a polaris span of that trace (across Kafka), and a polaris span that is the child of an emulator span (the
+    claim).

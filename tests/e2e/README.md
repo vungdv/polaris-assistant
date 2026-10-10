@@ -15,6 +15,9 @@ playwright-cli open https://polaris.local/chat
 ```bash
 make up && make e2e-fulfilment
 ```
+On the kind cluster (`make k8s-up`), `make k8s-e2e-fulfilment` runs the same script through the cluster's Gateway
+(`E2E_TARGET=k8s`) and reads the Kafka events inside a Kafka node; `make k8s-smoke` runs it with the realm's
+`DEFAULT_PASSWORD` (`E2E_PASSWORD`, `E2E_STAFF_PASSWORD`).
 API-first k6 scenario (`k6/fulfilment.js`, helpers in `k6/lib/`), run through the `grafana/k6` image like `make test-perf`.
 Repeatable: every run passes without cleanup.
 

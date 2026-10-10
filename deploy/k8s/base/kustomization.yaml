@@ -9,4 +9,5 @@ resources:
   - keycloak
   - polaris
   - polaris-assistant
+  - polaris-fulfilment-emulator
   - swagger-ui

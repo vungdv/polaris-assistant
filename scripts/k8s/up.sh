@@ -116,8 +116,9 @@ kctl -n "$K8S_NAMESPACE" wait --for=condition=Ready "keycloak.k8s.keycloak.org/$
 # waits here.
 log "waiting for $SWAGGER_UI"
 kctl -n "$K8S_NAMESPACE" rollout status "deployment/$SWAGGER_UI" --timeout="$K8S_WAIT_TIMEOUT" >/dev/null
-# Assistant (K9): likewise, once its image is loaded; its pods start after polaris is ready (init container).
-for app in "$POLARIS" "$ASSISTANT"; do
+# Assistant (K9) and fulfilment emulator (K10): likewise, once their images are loaded; their pods start after polaris
+# is ready (init container).
+for app in "$POLARIS" "$ASSISTANT" "$EMULATOR"; do
   if image_loaded "$(app_image "$app")"; then
     log "waiting for $app ($(app_image "$app"))"
     kctl -n "$K8S_NAMESPACE" rollout status "deployment/$app" --timeout="$K8S_WAIT_TIMEOUT" >/dev/null
