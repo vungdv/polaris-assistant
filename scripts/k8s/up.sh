@@ -46,6 +46,27 @@ apply_realm_secret() {
 }
 apply_realm_secret
 
+# Assistant credentials and settings (K9): GEMINI_API_KEY, TYPESAFE_API_KEY and AGENTO11Y_*, the keys Compose passes to
+# polaris-assistant from .env. Unlike the realm placeholders these aren't imported once, so the Secret mirrors the env
+# file on every run: a key it leaves empty is left out, and application.yml's default applies (no API key: the
+# assistant still starts and stays ready, but chat turns answer 503). Pods read the Secret at start, so a changed Secret
+# restarts the Deployment (rolling, as any restart). CI writes the env file from repository secrets.
+apply_assistant_secret() {
+  local key value values="" result
+  for key in "${ASSISTANT_SECRET_KEYS[@]}"; do
+    value="$(env_value "$key")"
+    [ -z "$value" ] || values+="$key=$value"$'\n'
+  done
+  [ -n "$values" ] || log "no assistant keys in ${K8S_ENV_FILE#"$REPO_ROOT"/}: chat turns need GEMINI_API_KEY"
+  result="$(kctl -n "$K8S_NAMESPACE" create secret generic "$ASSISTANT_SECRET" --from-env-file=<(printf '%s' "$values") \
+    --dry-run=client -o yaml | kctl apply -f -)"
+  if [[ "$result" == *" configured" ]] && kctl -n "$K8S_NAMESPACE" get "deployment/$ASSISTANT" >/dev/null 2>&1; then
+    log "Secret $ASSISTANT_SECRET changed: restarting deployment/$ASSISTANT"
+    kctl -n "$K8S_NAMESPACE" rollout restart "deployment/$ASSISTANT" >/dev/null
+  fi
+}
+apply_assistant_secret
+
 write_image_pins
 write_realm_imports
 log "applying ${K8S_OVERLAY#"$REPO_ROOT"/} (app images pinned to $IMAGE_TAG)"
@@ -95,10 +116,13 @@ kctl -n "$K8S_NAMESPACE" wait --for=condition=Ready "keycloak.k8s.keycloak.org/$
 # waits here.
 log "waiting for $SWAGGER_UI"
 kctl -n "$K8S_NAMESPACE" rollout status "deployment/$SWAGGER_UI" --timeout="$K8S_WAIT_TIMEOUT" >/dev/null
-if image_loaded "$(app_image "$POLARIS")"; then
-  log "waiting for $POLARIS ($(app_image "$POLARIS"))"
-  kctl -n "$K8S_NAMESPACE" rollout status "deployment/$POLARIS" --timeout="$K8S_WAIT_TIMEOUT" >/dev/null
-else
-  log "image $(app_image "$POLARIS") is not loaded yet: run 'make k8s-images APPS=$POLARIS', then 'make k8s-up' again"
-fi
+# Assistant (K9): likewise, once its image is loaded; its pods start after polaris is ready (init container).
+for app in "$POLARIS" "$ASSISTANT"; do
+  if image_loaded "$(app_image "$app")"; then
+    log "waiting for $app ($(app_image "$app"))"
+    kctl -n "$K8S_NAMESPACE" rollout status "deployment/$app" --timeout="$K8S_WAIT_TIMEOUT" >/dev/null
+  else
+    log "image $(app_image "$app") is not loaded yet: run 'make k8s-images APPS=$app', then 'make k8s-up' again"
+  fi
+done
 log "cluster '$KIND_CLUSTER_NAME' is up (context $KUBE_CONTEXT)"

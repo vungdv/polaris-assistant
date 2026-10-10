@@ -1,0 +1,162 @@
+# Assistant (K9): Compose's `polaris-assistant`, two replicas (TR-K5).
+#
+# Multi-replica safety (TR-K5): a conversation isn't tied to a pod. Sessions, messages and order drafts live in
+# PostgreSQL (JPA session store) and the intent taxonomy in Redis, so consecutive turns of one session can land on
+# either replica (the smoke test pins them to different pods).
+#
+# Start order: Compose starts the assistant only once polaris is healthy. Here the init container waits for the polaris
+# Service to answer its readiness group (Flyway done), for the same reason: the assistant creates its own tables with
+# Hibernate `ddl-auto: update` in the shared database, and Flyway refuses to migrate a non-empty schema without its
+# history table. (ddl-auto on a Flyway-owned database is a known risk, raised as a follow-up in the plan.)
+#
+# Lifecycle (TR-K4), with server.shutdown=graceful and a 30s shutdown phase that covers a whole chat turn
+# (polaris.ai.turn-deadline 25s; application.yml, K2):
+#   - startupProbe gives the context (Hibernate schema update included) up to 5 minutes before liveness applies,
+#   - readiness keeps Compose's semantics: `readinessState` + `db` + `polarisMcp` only (application.yml). Gemini and
+#     TypeSafe are on /actuator/health but not in readiness, so a model outage never takes pods out of the Service,
+#   - on termination the preStop sleep keeps the pod serving for 10s while the Gateway drops the endpoint, then
+#     SIGTERM starts the graceful drain (at most 30s), so an in-flight turn (at most 25s) completes during a rolling
+#     restart. terminationGracePeriodSeconds = 10 + 30 + 10s margin.
+#
+# Telemetry (TR-K9): OTLP to the Collector, whose k8s_attributes processor adds k8s.namespace.name, k8s.pod.name and
+# k8s.deployment.name; the pod's UID is a resource attribute so the Collector matches the pod by UID. The assistant
+# forwards W3C traceparent on its MCP and REST calls to polaris.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: polaris-assistant
+  labels:
+    app.kubernetes.io/name: polaris-assistant
+    app.kubernetes.io/part-of: polaris
+spec:
+  replicas: 2
+  # A rolling restart never drops below two ready pods.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: polaris-assistant
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: polaris-assistant
+        app.kubernetes.io/part-of: polaris
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 50
+      # Pod Security `restricted` (TR-K10): the image's numeric non-root user (K2).
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        # Compose's `depends_on: polaris: condition: service_healthy` (see the header).
+        - name: wait-for-polaris
+          image: curlimages/curl:8.22.0@sha256:58adaa4e8dca9c988bae2aba4ab3434a0bb2da16bbe3f92dec39ec7785166777
+          command: ["sh", "-c"]
+          args:
+            - until curl -fsS -o /dev/null --max-time 3 http://polaris:8080/actuator/health/readiness; do
+                echo "waiting for polaris to be ready"; sleep 3;
+              done
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              memory: 32Mi
+      containers:
+        - name: polaris-assistant
+          image: polaris-assistant
+          ports:
+            - name: http
+              containerPort: 8081
+          envFrom:
+            - configMapRef:
+                name: polaris-assistant
+            # GEMINI_API_KEY, TYPESAFE_API_KEY and AGENTO11Y_* from the untracked env file (scripts/k8s/up.sh, TR-K3).
+            # A key the env file leaves empty is absent, so application.yml's default applies (as Compose's `${X:-}`).
+            - secretRef:
+                name: polaris-assistant
+          env:
+            # Operator-generated owner credentials of polaris-db (K5, TR-K3); the assistant shares the polaris database.
+            - name: SPRING_DATASOURCE_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: polaris-db-app
+                  key: username
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: polaris-db-app
+                  key: password
+            - name: POD_UID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.uid
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: k8s.pod.uid=$(POD_UID)
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 60
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          # polarisMcp's own probe timeout is 2s, so a slow polaris answers within the probe's timeout.
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 3
+          lifecycle:
+            preStop:
+              sleep:
+                seconds: 10
+          resources:
+            requests:
+              cpu: 250m
+              memory: 384Mi
+            limits:
+              cpu: "2"
+              memory: 1Gi
+          volumeMounts:
+            # Embedded Tomcat's work directory and the JVM's temporary files, under a read-only root filesystem.
+            - name: tmp
+              mountPath: /tmp
+            # trust-manager's bundle (K3): the public roots plus the cluster root CA, as truststore.jks. It also lets
+            # the assistant reach Gemini and TypeSafe over public TLS.
+            - name: trust
+              mountPath: /etc/polaris-trust
+              readOnly: true
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 256Mi
+        - name: trust
+          configMap:
+            name: polaris-ca-bundle

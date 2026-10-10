@@ -1,0 +1,78 @@
+# https://polaris.local -> polaris-assistant (K9, TR-K7), as Compose's nginx `polaris.local` server:
+#   - `polaris-assistant`           /api/v1/assistant (`location /api/v1/assistant`): chat and order drafts, unbuffered
+#                                   (SSE, proxy-settings below),
+#   - `polaris-assistant-api-docs`  /v3/api-docs/assistant (`location /v3/api-docs/assistant`), rewritten to the
+#                                   assistant's /v3/api-docs, the spec Swagger UI lists as "Assistant API".
+# Both prefixes are more specific than polaris's `/` route, so they win (Gateway API precedence). Both routes are traced
+# (base/edge/tracing-policy.yaml), so the Gateway's span is the parent of the assistant's server span.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: polaris-assistant
+  labels:
+    app.kubernetes.io/name: polaris-assistant
+    app.kubernetes.io/part-of: polaris
+spec:
+  parentRefs:
+    - name: polaris
+      sectionName: https-polaris
+  hostnames:
+    - polaris.local
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api/v1/assistant
+      backendRefs:
+        - name: polaris-assistant
+          port: 8081
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: polaris-assistant-api-docs
+  labels:
+    app.kubernetes.io/name: polaris-assistant
+    app.kubernetes.io/part-of: polaris
+spec:
+  parentRefs:
+    - name: polaris
+      sectionName: https-polaris
+  hostnames:
+    - polaris.local
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /v3/api-docs/assistant
+      filters:
+        # nginx's `proxy_pass http://polaris-assistant:8081/v3/api-docs` replaces the location prefix the same way.
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /v3/api-docs
+      backendRefs:
+        - name: polaris-assistant
+          port: 8081
+---
+# SSE on /api/v1/assistant (TR-K7): Compose's `proxy_buffering off` (events reach the client as they are written) and
+# a read timeout above the longest turn. A turn is bounded by the assistant's 25s turn deadline; the 5m timeout leaves
+# room for a long-lived stream, as the e2e clients allow 120s per turn.
+apiVersion: gateway.nginx.org/v1alpha1
+kind: ProxySettingsPolicy
+metadata:
+  name: polaris-assistant-sse
+  labels:
+    app.kubernetes.io/name: polaris-assistant
+    app.kubernetes.io/part-of: polaris
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: polaris-assistant
+  buffering:
+    disable: true
+  timeout:
+    read: 5m
+    send: 5m

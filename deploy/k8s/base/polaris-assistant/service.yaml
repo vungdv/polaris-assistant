@@ -1,0 +1,16 @@
+# In-cluster address of the assistant (the Gateway's /api/v1/assistant and /v3/api-docs/assistant routes):
+# http://polaris-assistant:8081, as on Compose's network.
+apiVersion: v1
+kind: Service
+metadata:
+  name: polaris-assistant
+  labels:
+    app.kubernetes.io/name: polaris-assistant
+    app.kubernetes.io/part-of: polaris
+spec:
+  selector:
+    app.kubernetes.io/name: polaris-assistant
+  ports:
+    - name: http
+      port: 8081
+      targetPort: http

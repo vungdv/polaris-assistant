@@ -8,4 +8,5 @@ resources:
   - kafka
   - keycloak
   - polaris
+  - polaris-assistant
   - swagger-ui
