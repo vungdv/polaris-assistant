@@ -105,7 +105,7 @@ Slices run top to bottom; only the `execute-plan` coordinator edits this table.
 | 8 | K8 | Order & Catalog (`polaris`) and Swagger UI | `done` | — | `k8s/k8-polaris` | [#16](https://github.com/vungdv/polaris-assistant/pull/16) | Merged 0f9dcfa |
 | 9 | K9 | Assistant (`polaris-assistant`) | `done` | Gemini and TypeSafe API keys available to CI as secrets | `k8s/k9-assistant` | [#17](https://github.com/vungdv/polaris-assistant/pull/17) | Merged aac954d |
 | 10 | K10 | Fulfilment (`polaris-fulfilment-emulator`) | `done` | — | `k8s/k10-fulfilment` | [#18](https://github.com/vungdv/polaris-assistant/pull/18) | Merged 5a0e3d9 |
-| 11 | K11 | Hardening: NetworkPolicies, autoscaling, disruption, backups | `todo` | — | | | |
+| 11 | K11 | Hardening: NetworkPolicies, autoscaling, disruption, backups | `in-progress` | — | | | |
 | 12 | K12 | Local LGTM stack and runbook | `todo` | — | | | |
 
 **Statuses:** `todo` → `in-progress` → `in-review` → `approved` (not merged) → `done` (merged), plus `blocked` (reason in *Notes*) and `dropped`.
