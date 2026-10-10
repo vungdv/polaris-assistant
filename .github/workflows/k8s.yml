@@ -47,11 +47,12 @@ jobs:
         printf 'GEMINI_API_KEY=%s\nTYPESAFE_API_KEY=%s\n' "$GEMINI_API_KEY" "$TYPESAFE_API_KEY" > deploy/k8s/.env.local
     - name: Create cluster and apply overlays/local
       run: make k8s-up
-    # The apps the cluster runs so far (K8: polaris, K9: polaris-assistant), built from this commit and loaded with
-    # `kind load` (GHCR packages are private, and PR images aren't pushed). Both polaris replicas then start together on
-    # the empty database, the concurrent Flyway start the smoke test checks; the assistant starts once polaris is ready.
+    # The three apps (K8: polaris, K9: polaris-assistant, K10: polaris-fulfilment-emulator), built from this commit and
+    # loaded with `kind load` (GHCR packages are private, and PR images aren't pushed). Both polaris replicas then start
+    # together on the empty database, the concurrent Flyway start the smoke test checks; the assistant and the emulator
+    # start once polaris is ready.
     - name: Build and load the app images
-      run: make k8s-images APPS="polaris polaris-assistant"
+      run: make k8s-images APPS="polaris polaris-assistant polaris-fulfilment-emulator"
     - name: Re-run k8s-up (idempotent; waits for the apps)
       run: make k8s-up
     - name: Smoke test
@@ -80,6 +81,8 @@ jobs:
         .tools/bin/kubectl --kubeconfig .tools/kubeconfig --context kind-polaris -n polaris logs deployment/swagger-ui --all-containers --tail=100 || true
         .tools/bin/kubectl --kubeconfig .tools/kubeconfig --context kind-polaris -n polaris describe deployments/polaris-assistant || true
         .tools/bin/kubectl --kubeconfig .tools/kubeconfig --context kind-polaris -n polaris logs -l app.kubernetes.io/name=polaris-assistant --all-containers --prefix --tail=300 || true
+        .tools/bin/kubectl --kubeconfig .tools/kubeconfig --context kind-polaris -n polaris describe deployments/polaris-fulfilment-emulator || true
+        .tools/bin/kubectl --kubeconfig .tools/kubeconfig --context kind-polaris -n polaris logs -l app.kubernetes.io/name=polaris-fulfilment-emulator --all-containers --prefix --tail=300 || true
         .tools/bin/kind export logs --name polaris "${RUNNER_TEMP}/kind-logs" || true
     - name: Upload kind logs
       if: failure()

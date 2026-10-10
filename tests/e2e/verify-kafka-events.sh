@@ -2,6 +2,7 @@
 # Verifies the plan acceptance "all 5 order.*.v1 events on Kafka, in order" for the given order numbers by reading
 # polaris.order.lifecycle through the cluster's own console consumer (what any consumer would see).
 # Usage: verify-kafka-events.sh ORD-1[=partner] ORD-2[=partner] ...   (run from the compose project directory)
+# E2E_TARGET=k8s reads the topic inside Kafka node 1 of the kind cluster (kubectl exec, the Strimzi bootstrap Service).
 # With =partner, the confirmed event's assignedPartner must equal it (the partner GET /orders/{n} reported).
 # No -e on purpose: mismatches are counted and reported per order before the single final exit code.
 set -uo pipefail
@@ -10,11 +11,23 @@ KAFKA_BOOTSTRAP=${KAFKA_BOOTSTRAP:-kafka-1:9092,kafka-2:9092,kafka-3:9092}
 EXPECTED="placed confirmed parceled delivering delivered"
 [ "$#" -gt 0 ] || { echo "FAIL no order numbers given"; exit 1; }
 
+if [ "${E2E_TARGET:-compose}" = k8s ]; then
+  # shellcheck source=scripts/k8s/lib.sh
+  source "$(dirname "$0")/../../scripts/k8s/lib.sh"   # sets KAFKA_BOOTSTRAP to the Strimzi bootstrap Service
+  console_consumer() {
+    kctl -n "$K8S_NAMESPACE" exec "$(kafka_pod 1)" -c kafka -- env KAFKA_HEAP_OPTS="-Xms32m -Xmx128m" \
+      /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server "$KAFKA_BOOTSTRAP" "$@"
+  }
+else
+  console_consumer() {
+    docker compose exec -T kafka-1 /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server "$KAFKA_BOOTSTRAP" "$@"
+  }
+fi
+
 # Output lines: <headers> TAB <key> TAB <value>; prints "<orderNumber> <event>" in topic order
 # (the confirmed event is printed as "confirmed@<assignedPartner>").
 lifecycle_events() {
-  docker compose exec -T kafka-1 /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server "$KAFKA_BOOTSTRAP" \
-    --topic "$TOPIC" --from-beginning --timeout-ms 6000 --property print.headers=true --property print.key=true 2>/dev/null |
+  console_consumer --topic "$TOPIC" --from-beginning --timeout-ms 6000 --property print.headers=true --property print.key=true 2>/dev/null </dev/null |
     awk -F'\t' '{ if (match($1, /ce_type:vn\.danang\.polaris\.order\.[a-z]+\.v1/)) { t = substr($1, RSTART, RLENGTH);
       sub(/.*order\./, "", t); sub(/\.v1/, "", t);
       if (t == "confirmed" && match($3, /"assignedPartner":"[^"]*"/)) t = t "@" substr($3, RSTART + 19, RLENGTH - 20); print $2, t } }'

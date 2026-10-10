@@ -1,0 +1,28 @@
+# Non-secret settings of the fulfilment emulator (K10, TR-K3), mapped from Compose's `polaris-fulfilment-emulator`
+# service environment. Differences from Compose:
+#   - Addresses are the cluster's Services: the Strimzi bootstrap Service (K6), the `polaris` Service for the claim REST
+#     API (K8) and the Collector (K4). The token endpoint stays the public issuer's `https://id.polaris.local` (TR-K8),
+#     which CoreDNS rewrites to the Gateway.
+#   - POLARIS_FULFILMENT_EMULATOR_SECRET comes from the Secret `keycloak-realm-placeholders`, the one the realm import
+#     substitutes into the emulator's Keycloak client (deployment.yaml), not from here. There is no default secret.
+#   - The trust store is the trust-manager bundle mounted at /etc/polaris-trust (deployment.yaml), with Compose's
+#     `-Djavax.net.ssl.trustStore` system property. The JVM sizes its heap from the container memory limit.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: polaris-fulfilment-emulator
+  labels:
+    app.kubernetes.io/name: polaris-fulfilment-emulator
+    app.kubernetes.io/part-of: polaris
+data:
+  SERVER_PORT: "8082"
+  # Any reachable broker bootstraps the client, which then discovers the whole cluster (K6).
+  SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka-kafka-bootstrap:9092
+  POLARIS_CORE_API_BASE_URL: http://polaris:8080
+  POLARIS_FULFILMENT_TOKEN_URI: https://id.polaris.local/realms/polaris/protocol/openid-connect/token
+  JAVA_TOOL_OPTIONS: -Djavax.net.ssl.trustStore=/etc/polaris-trust/truststore.jks -XX:MaxRAMPercentage=70
+  MANAGEMENT_OTLP_METRICS_EXPORT_URL: http://otel-collector:4318/v1/metrics
+  MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT: http://otel-collector:4318/v1/traces
+  MANAGEMENT_OPENTELEMETRY_LOGGING_EXPORT_OTLP_ENDPOINT: http://otel-collector:4318/v1/logs
+  # The emulator continues the trace each order event carries (traceparent in its Kafka headers).
+  MANAGEMENT_TRACING_SAMPLING_PROBABILITY: "1.0"

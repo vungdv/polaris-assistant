@@ -1,4 +1,4 @@
-.PHONY: seed-shoppers chat-scenarios pull build up up-dev-ports down validate-docs setup-hooks render-bpmn test test-rules test-perf test-concurrency e2e-fulfilment e2e-fulfilment gcx gcx-exec status playwright-ui playwright-close run run-assistant run-fulfilment verify-fulfilment-image clean polaris-sql kafka-topics kafka-tail kafka-cluster kafka-offsets kafka-groups kafka-leaders k8s-tools k8s-validate k8s-up k8s-down k8s-smoke k8s-images k8s-kafka-topics k8s-kafka-tail k8s-kafka-cluster k8s-kafka-offsets k8s-kafka-groups k8s-kafka-leaders
+.PHONY: seed-shoppers chat-scenarios pull build up up-dev-ports down validate-docs setup-hooks render-bpmn test test-rules test-perf test-concurrency e2e-fulfilment e2e-fulfilment gcx gcx-exec status playwright-ui playwright-close run run-assistant run-fulfilment verify-fulfilment-image clean polaris-sql kafka-topics kafka-tail kafka-cluster kafka-offsets kafka-groups kafka-leaders k8s-tools k8s-validate k8s-up k8s-down k8s-smoke k8s-images k8s-e2e-fulfilment k8s-kafka-topics k8s-kafka-tail k8s-kafka-cluster k8s-kafka-offsets k8s-kafka-groups k8s-kafka-leaders
 
 run:
 	mvn spring-boot:run -pl apps/polaris
@@ -109,6 +109,9 @@ k8s-smoke:
 # Builds the app images tagged with the git SHA and loads them into the kind cluster (APPS="polaris ..." for a subset)
 k8s-images:
 	./scripts/k8s/images.sh $(APPS)
+# The fulfilment e2e of e2e-fulfilment against the kind cluster, through its Gateway (the same env knobs as above)
+k8s-e2e-fulfilment:
+	E2E_TARGET=k8s ./tests/e2e/run-fulfilment.sh
 # Kafka admin on the cluster, as the kafka-* targets above: kubectl exec into a Kafka node (NODE as above: node ids 1-3)
 # against the bootstrap Service. TOPIC= as for kafka-tail and kafka-offsets.
 k8s-kafka-topics k8s-kafka-tail k8s-kafka-cluster k8s-kafka-offsets k8s-kafka-groups k8s-kafka-leaders: k8s-kafka-%:

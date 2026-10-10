@@ -1,0 +1,154 @@
+# Fulfilment emulator (K10): Compose's `polaris-fulfilment-emulator`, one replica as today. Each partner is one Kafka
+# consumer group (`fulfilment.<partner>`) on polaris.order.lifecycle, so one pod runs all three partners; a second pod
+# during a rolling update only joins those groups and splits their partitions (Kafka's group protocol keeps each record
+# with one member per group).
+#
+# Stateless: no database, no API beyond actuator (TR-F4), and no HTTPRoute, so actuator is in-cluster only (service.yaml).
+# The emulator reads order events from Kafka through the Strimzi bootstrap Service, gets client-credentials tokens from
+# the public issuer https://id.polaris.local (CoreDNS rewrites it to the Gateway), claims orders on the polaris
+# Service, and publishes shipment events to its own topic (D10: it provisions polaris.fulfilment.shipments at start).
+#
+# Start order: Compose starts the emulator only once polaris is healthy. Here the init container waits for the polaris
+# Service to answer its readiness group, for the same reason: polaris owns and provisions the order lifecycle topic the
+# emulator consumes (D10), and serves the claims.
+#
+# Lifecycle (TR-K4), with server.shutdown=graceful and a 20s shutdown phase (application.yml, K2) that also stops the
+# Kafka listener containers and commits their offsets:
+#   - startupProbe gives the context up to 3 minutes before liveness applies,
+#   - readiness is the default group (readinessState),
+#   - on termination the preStop sleep keeps the pod up for 5s while the Service drops the endpoint, then SIGTERM starts
+#     the graceful drain (at most 20s). terminationGracePeriodSeconds = 5 + 20 + 5s margin.
+#
+# Telemetry (TR-K9): OTLP to the Collector, whose k8s_attributes processor adds k8s.namespace.name, k8s.pod.name and
+# k8s.deployment.name; the pod's UID is a resource attribute so the Collector matches the pod by UID. Each order
+# event carries the trace context of the request that placed the order (outbox, ADR-0019), so the emulator's consumer
+# span continues that trace across Kafka, and its claim REST call forwards traceparent to polaris.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: polaris-fulfilment-emulator
+  labels:
+    app.kubernetes.io/name: polaris-fulfilment-emulator
+    app.kubernetes.io/part-of: polaris
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: polaris-fulfilment-emulator
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: polaris-fulfilment-emulator
+        app.kubernetes.io/part-of: polaris
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 30
+      # Pod Security `restricted` (TR-K10): the image's numeric non-root user (K2).
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        # Compose's `depends_on: polaris: condition: service_healthy` (see the header).
+        - name: wait-for-polaris
+          image: curlimages/curl:8.22.0@sha256:58adaa4e8dca9c988bae2aba4ab3434a0bb2da16bbe3f92dec39ec7785166777
+          command: ["sh", "-c"]
+          args:
+            - until curl -fsS -o /dev/null --max-time 3 http://polaris:8080/actuator/health/readiness; do
+                echo "waiting for polaris to be ready"; sleep 3;
+              done
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              memory: 32Mi
+      containers:
+        - name: polaris-fulfilment-emulator
+          image: polaris-fulfilment-emulator
+          ports:
+            - name: http
+              containerPort: 8082
+          envFrom:
+            - configMapRef:
+                name: polaris-fulfilment-emulator
+          env:
+            # The secret of the emulator's Keycloak client, from the Secret the realm import substitutes it from (K7),
+            # so both sides always hold the same value. Never Compose's dev default (TR-K3).
+            - name: POLARIS_FULFILMENT_EMULATOR_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-realm-placeholders
+                  key: POLARIS_FULFILMENT_EMULATOR_SECRET
+            - name: POD_UID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.uid
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: k8s.pod.uid=$(POD_UID)
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 36
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          lifecycle:
+            preStop:
+              sleep:
+                seconds: 5
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          volumeMounts:
+            # Embedded Tomcat's work directory and the JVM's temporary files, under a read-only root filesystem.
+            - name: tmp
+              mountPath: /tmp
+            # trust-manager's bundle (K3): the public roots plus the cluster root CA, as truststore.jks, for the token
+            # endpoint on https://id.polaris.local.
+            - name: trust
+              mountPath: /etc/polaris-trust
+              readOnly: true
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 128Mi
+        - name: trust
+          configMap:
+            name: polaris-ca-bundle
