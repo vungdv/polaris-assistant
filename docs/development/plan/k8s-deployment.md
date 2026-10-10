@@ -173,11 +173,12 @@ Slices run top to bottom; only the `execute-plan` coordinator edits this table.
 ### K9: Assistant (`polaris-assistant`)
 **Covers:** TR-K3, TR-K4, TR-K5, TR-K9 for the assistant context.
 - Deployment (2 replicas), Service, ConfigMap and Secret mapped from the Compose service. `POLARIS_MCP_CORE_URL` and `POLARIS_CORE_API_BASE_URL` point at the `polaris` Service. `GEMINI_API_KEY`, `TYPESAFE_API_KEY` and the `AGENTO11Y_*` settings come from the Secret.
+- A `wait-for-polaris` init container holds the assistant until `polaris` is ready, the Kubernetes equivalent of Compose's `depends_on: polaris: service_healthy`. It keeps the assistant's Hibernate `ddl-auto: update` from creating tables before polaris's Flyway migrates an empty database.
 - Readiness keeps today's semantics: it checks db and `polarisMcp` only, so Gemini or TypeSafe outages never take pods out of the Service.
 - `HTTPRoute`s for `/api/v1/assistant` (SSE) and `/v3/api-docs/assistant`. `terminationGracePeriodSeconds` covers the turn time budget, so a rolling restart doesn't cut an in-flight SSE turn. Add each new `HTTPRoute` to `base/edge/tracing-policy.yaml` (NGF traces only routes in its `targetRefs`, at most 16).
 - The assistant's sessions and order drafts survive a replica switch mid-conversation (JPA session store + Redis intents). Verified by pinning consecutive turns to different pods.
 - Smoke: `make seed-shoppers` (with `KC_ADMIN_USER`/`KC_ADMIN_PASSWORD` from Secret `keycloak-initial-admin`, the operator's bootstrap admin, not Compose's `admin`/`admin`) and `make chat-scenarios` pass through the Gateway, and one trace spans Gateway → assistant → `polaris` (MCP).
-- Risk, out of scope: the assistant uses `ddl-auto: update` on the shared database. That conflicts with forward-only migrations and becomes riskier with multiple replicas. Raised as a follow-up, not fixed here.
+- Risk, out of scope: the assistant uses `ddl-auto: update` on the shared database. That conflicts with forward-only migrations and becomes riskier with multiple replicas: on first deploy both replicas run `ddl-auto: update` at once and can race on `CREATE TABLE` (one pod crashes and recovers on restart). Raised as a follow-up, not fixed here.
 
 ### K10: Fulfilment (`polaris-fulfilment-emulator`)
 **Covers:** TR-K3, TR-K4, TR-K9 for the fulfilment context.
@@ -219,3 +220,4 @@ Slices run top to bottom; only the `execute-plan` coordinator edits this table.
 | 2026-10-07 | TR-K3 names operator-generated CNPG credentials as an exception. D2 backups are now delivered: K11 adds CNPG scheduled backups and WAL archiving to an in-cluster object store, with a restore check | Findings from the K5 review | K11 |
 | 2026-10-07 | TR-K6 records Kafka 4.1.1 on Kubernetes as an accepted deviation; Compose moves to 4.1.x in a separate change. K6 documents that there is no host Kafka listener on kind | Findings from the K6 review | K6 |
 | 2026-10-08 | D4/K7: master realm imported by the server at first start; only polaris uses KeycloakRealmImport. K9 seed-shoppers and K12 runbook use the operator bootstrap admin and grafana-admin. K10 reads the emulator secret from keycloak-realm-placeholders and adds it to .env.template. K11 adds Keycloak operator, import Job and NGF→Keycloak edges; TR-K10 records the operator Secret access as accepted | Findings from the K7 review | K7, K9, K10, K11, K12 |
+| 2026-10-10 | K9 records the `wait-for-polaris` init container (Compose `depends_on: service_healthy` equivalent, orders `ddl-auto` after Flyway). The `ddl-auto` follow-up risk adds the two-replica first-start `CREATE TABLE` race | Findings from the K9 review | K9 |
