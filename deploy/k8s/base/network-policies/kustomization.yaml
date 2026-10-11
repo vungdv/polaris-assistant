@@ -12,8 +12,9 @@
 # name them only by address, so:
 #   - the API server is TCP 6443 on any address (kind's and kubeadm's port). Its endpoint is a per-cluster node
 #     address; a cloud overlay narrows the rule to the control plane's CIDR and port.
-#   - an external API is TCP 443 to any address outside the private ranges (RFC 1918). NetworkPolicy has no host
-#     names, so the rule can't tell Gemini from any other public HTTPS host.
+#   - an external API is TCP 443 to any address outside the private (RFC 1918), shared (100.64/10) and link-local
+#     (169.254/16, cloud metadata) ranges. NetworkPolicy has no host names, so the rule can't tell Gemini from any
+#     other public HTTPS host.
 # Kubelet probes come from the node itself, which kind's NetworkPolicy implementation (kindnet) doesn't police.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization

@@ -44,10 +44,17 @@ fi
 # --- Smoke probes under the NetworkPolicies (K11) ------------------------------------------------------------
 # The namespace denies all traffic except the flows of §Topology (base/network-policies). The smoke test's own probe
 # pods (curl, psql, redis-cli, k6) aren't part of that allow list, but check components directly (a database, Redis,
-# management ports, pod addresses). For the duration of the run, a test fixture admits pods labelled
-# polaris.local/smoke-probe=true to and from every pod of the namespace. It is removed on exit, and the K11 checks show
-# that a pod without the label stays locked out. The fixture is never part of the deployed manifests.
+# management ports, pod addresses). For the duration of the run, a test fixture lets pods labelled
+# polaris.local/smoke-probe=true reach every pod of the namespace (the callee's ingress) and lets them, and pods
+# labelled polaris.local/smoke-probe=egress-only, send anywhere (the probe's own egress). It is removed on exit. An
+# `egress-only` probe is outside the allow list on the callee's side only, so the K11 checks with it show that the
+# callees' ingress rules lock it out. The fixture is never part of the deployed manifests.
 SMOKE_PROBE_KEY=polaris.local/smoke-probe
+remove_smoke_policy() {
+  kctl -n "$K8S_NAMESPACE" delete networkpolicy smoke-probes smoke-probes-egress --ignore-not-found --wait=false \
+    >/dev/null 2>&1 || true
+}
+trap remove_smoke_policy EXIT
 kctl -n "$K8S_NAMESPACE" apply -f - >/dev/null <<EOF
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -73,20 +80,17 @@ metadata:
     app.kubernetes.io/name: smoke-probes
 spec:
   podSelector:
-    matchLabels:
-      $SMOKE_PROBE_KEY: "true"
+    matchExpressions:
+      - key: $SMOKE_PROBE_KEY
+        operator: In
+        values: ["true", "egress-only"]
   policyTypes:
     - Egress
   egress:
-    - to:
-        - podSelector: {}
+    - {}
 EOF
-remove_smoke_policy() {
-  kctl -n "$K8S_NAMESPACE" delete networkpolicy smoke-probes smoke-probes-egress --ignore-not-found --wait=false \
-    >/dev/null 2>&1 || true
-}
-# probe_label: the value of $SMOKE_PROBE_KEY on the probe pods below (run_probe); "false" leaves a probe outside the
-# fixture.
+# probe_label: the value of $SMOKE_PROBE_KEY on the probe pods below (run_probe); "egress-only" leaves a probe outside
+# the callees' allow list.
 probe_label=true
 
 # --- K3: edge (TLS, Gateway, DNS) -----------------------------------------------------------------------------
@@ -1360,27 +1364,35 @@ check "the emulator spans carry k8s.namespace.name, k8s.pod.name and k8s.deploym
 # --- K11: hardening (NetworkPolicies, Pod Security, autoscaling, backups, node drain) --------------------------------
 # NetworkPolicies (TR-K10): the namespace denies all traffic by default (base/network-policies); every check above ran
 # under it, through the allow list of §Topology (and, for the probes, the smoke fixture). A pod outside the allow list
-# (no smoke label) resolves names but can't open a connection to polaris-db or Kafka; the same probe with the fixture
-# label can, so the refusal is the policy's. Each line: `<target> <resolved address> <open | blocked-<exit code>>`.
+# whose own egress is open (smoke label `egress-only`) resolves names but can't open a connection to polaris-db, Kafka,
+# or the object store's S3 (8333) and unauthenticated filer (8888) ports: the callees' ingress rules refuse it. The
+# same probe admitted by the fixture connects to polaris-db and Kafka, so the refusal is the policies'; the object
+# store admits only the CNPG pods, whose backups (below) are its control. Each line: `<target> <resolved address>
+# <open | blocked-<exit code>>`.
 check "NetworkPolicy default-deny selects every pod for ingress and egress" [ "$(kctl -n "$K8S_NAMESPACE" get \
   networkpolicy default-deny -o jsonpath='{.spec.podSelector} {.spec.policyTypes}' 2>/dev/null)" = '{} ["Ingress","Egress"]' ]
 # shellcheck disable=SC2016 # expanded by the probe's shell, not here
-reach_script='for target in polaris-db-rw:5432 kafka-kafka-bootstrap:9092; do
+reach_script='for target in polaris-db-rw:5432 kafka-kafka-bootstrap:9092 $STORE:8333 $STORE:8888; do
   host=${target%:*}; port=${target#*:}
   ip=$(getent hosts "$host" | cut -d" " -f1)
   if timeout 5 bash -c "</dev/tcp/$host/$port" 2>/dev/null; then r=open; else r=blocked-$?; fi
   echo "$target ${ip:-unresolved} $r"
 done'
 k5_probes+=(k11-outsider k11-insider) # removed on exit too
-probe_label=false
-outsider="$(run_probe k11-outsider "$pg_image" 26 "$reach_script" || true)"
+store="$OBJECT_STORE_DEPLOYMENT.$OBJECT_STORE_NAMESPACE"
+store_env="        - name: STORE
+          value: $store"
+probe_label=egress-only
+outsider="$(run_probe k11-outsider "$pg_image" 26 "$reach_script" "$store_env" || true)"
 probe_label=true
-insider="$(run_probe k11-insider "$pg_image" 26 "$reach_script" || true)"
-log "reachability without the smoke label:"$'\n'"$outsider"$'\n'"with it:"$'\n'"$insider"
-for target in polaris-db-rw:5432 kafka-kafka-bootstrap:9092; do
+insider="$(run_probe k11-insider "$pg_image" 26 "$reach_script" "$store_env" || true)"
+log "reachability with open egress but no ingress grant:"$'\n'"$outsider"$'\n'"admitted by the fixture:"$'\n'"$insider"
+for target in polaris-db-rw:5432 kafka-kafka-bootstrap:9092 "$store:8333" "$store:8888"; do
   blocked() { grep -Eq "^$target [0-9.]+ blocked-" <<<"$outsider"; }
-  check "a pod outside the allow list resolves $target but can't connect to it" blocked
-  check "the same probe with the smoke fixture's label connects to $target (control)" grep -Eq "^$target [0-9.]+ open$" <<<"$insider"
+  check "a pod outside the allow list (its own egress open) resolves $target but can't connect to it" blocked
+done
+for target in polaris-db-rw:5432 kafka-kafka-bootstrap:9092; do
+  check "the same probe admitted by the smoke fixture connects to $target (control)" grep -Eq "^$target [0-9.]+ open$" <<<"$insider"
 done
 
 # Pod Security `restricted` (TR-K10): the namespace has enforced it since K1, so every pod was admitted under it. A
@@ -1406,7 +1418,7 @@ check "every pod in $OBJECT_STORE_NAMESPACE (the object store) passes Pod Securi
 check "deployment kube-system/metrics-server is available" \
   quiet kctl -n kube-system rollout status deployment/metrics-server --timeout=60s
 for app in "$POLARIS" "$ASSISTANT"; do
-  check "HPA $app scales deployment $app from 2 to 4 replicas on CPU utilization" [ "$(kctl -n "$K8S_NAMESPACE" get hpa \
+  check "HPA $app targets deployment $app with 2-4 replicas on CPU utilization" [ "$(kctl -n "$K8S_NAMESPACE" get hpa \
     "$app" -o jsonpath='{.spec.scaleTargetRef.name} {.spec.minReplicas} {.spec.maxReplicas} {.spec.metrics[0].resource.name} {.spec.metrics[0].resource.target.type}' \
     2>/dev/null)" = "$app 2 4 cpu Utilization" ]
   deadline=$((SECONDS + ${HPA_SMOKE_TIMEOUT:-180}))

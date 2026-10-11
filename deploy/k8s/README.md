@@ -416,14 +416,19 @@ operator) as their WAL archiver, and `base/data/backup.yaml` declares the shared
 retention) and a nightly ScheduledBackup per Cluster, which also takes one backup as soon as it is created. The bucket
 is on an in-cluster S3-compatible store, SeaweedFS all-in-one (`platform/object-store`, namespace `object-store`, on a
 PersistentVolumeClaim). `make k8s-up` generates its S3 credentials once and keeps them: Secret
-`object-store/object-store-s3-config` (the identity, limited to the bucket) and `polaris/object-store-credentials` (what
-the ObjectStore signs with). To restore, create a Cluster with `bootstrap.recovery.source` naming an external cluster
+`object-store/object-store-s3-config` (the S3 gateway's one identity, whose actions are limited to the bucket) and
+`polaris/object-store-credentials` (what the ObjectStore signs with). The credentials guard only the S3 port (8333):
+SeaweedFS's master, volume and filer ports (9333, 8080, 8888 and their gRPC ports) take none, and the filer would serve
+and delete the backups. So `platform/object-store/network-policy.yaml` denies all traffic in `object-store` and admits
+only the CNPG pods of `polaris`, on 8333 (the server may still reach itself and DNS). To restore, create a Cluster with `bootstrap.recovery.source` naming an external cluster
 whose `plugin` is `barman-cloud.cloudnative-pg.io` with `barmanObjectName: cnpg-backups` and `serverName` the source
 Cluster (the smoke test's `polaris-db-restore` is an example).
 
 **Smoke.** The probe pods of `make k8s-smoke` carry `polaris.local/smoke-probe=true`, and for the run only a fixture
 policy lets them reach any pod of the namespace (removed on exit). On top of that, the K11 checks:
-- A probe without that label resolves `polaris-db-rw` and `kafka-kafka-bootstrap` but can't connect; with it, it can.
+- A probe whose own egress is open (`polaris.local/smoke-probe=egress-only`) but that no ingress rule admits resolves
+  `polaris-db-rw`, `kafka-kafka-bootstrap` and the object store but can't connect to them (S3 8333, filer 8888);
+  admitted by the fixture, it connects to polaris-db and Kafka.
 - A dry run of the namespace's `restricted` label reports no violating pod (in `polaris` and `object-store`), while the
   same dry run flags the privileged log agent in `observability`.
 - Both HPAs target their Deployment, 2-4 replicas on CPU, and read their pods' CPU from metrics-server.

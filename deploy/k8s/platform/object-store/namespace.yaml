@@ -1,6 +1,6 @@
 # The in-cluster object store's namespace (K11, values.yaml), with Pod Security `restricted` as the app namespace
-# (TR-K10). The PostgreSQL pods in `polaris` reach its S3 port through an egress rule there
-# (base/network-policies/data.yaml).
+# (TR-K10), and default-deny NetworkPolicies (network-policy.yaml): only the PostgreSQL pods of `polaris` reach its S3
+# port, through an egress rule there (base/network-policies/data.yaml) and an ingress rule here.
 apiVersion: v1
 kind: Namespace
 metadata:
