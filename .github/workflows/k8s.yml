@@ -83,6 +83,13 @@ jobs:
         .tools/bin/kubectl --kubeconfig .tools/kubeconfig --context kind-polaris -n polaris logs -l app.kubernetes.io/name=polaris-assistant --all-containers --prefix --tail=300 || true
         .tools/bin/kubectl --kubeconfig .tools/kubeconfig --context kind-polaris -n polaris describe deployments/polaris-fulfilment-emulator || true
         .tools/bin/kubectl --kubeconfig .tools/kubeconfig --context kind-polaris -n polaris logs -l app.kubernetes.io/name=polaris-fulfilment-emulator --all-containers --prefix --tail=300 || true
+        .tools/bin/kubectl --kubeconfig .tools/kubeconfig --context kind-polaris get nodes -o wide || true
+        .tools/bin/kubectl --kubeconfig .tools/kubeconfig --context kind-polaris -n polaris get networkpolicies,hpa,pods -o wide || true
+        .tools/bin/kubectl --kubeconfig .tools/kubeconfig --context kind-polaris -n polaris get objectstores.barmancloud.cnpg.io,scheduledbackups.postgresql.cnpg.io,backups.postgresql.cnpg.io -o wide || true
+        .tools/bin/kubectl --kubeconfig .tools/kubeconfig --context kind-polaris -n polaris describe hpa || true
+        .tools/bin/kubectl --kubeconfig .tools/kubeconfig --context kind-polaris -n cnpg-system logs deployment/barman-cloud --tail=200 || true
+        .tools/bin/kubectl --kubeconfig .tools/kubeconfig --context kind-polaris -n polaris logs -l cnpg.io/cluster=polaris-db -c plugin-barman-cloud --prefix --tail=200 || true
+        .tools/bin/kubectl --kubeconfig .tools/kubeconfig --context kind-polaris -n object-store logs deployment/seaweedfs-all-in-one --tail=100 || true
         .tools/bin/kind export logs --name polaris "${RUNNER_TEMP}/kind-logs" || true
     - name: Upload kind logs
       if: failure()

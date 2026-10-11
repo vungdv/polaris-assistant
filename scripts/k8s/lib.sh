@@ -71,6 +71,17 @@ export KUBECONFIG="$K8S_KUBECONFIG"
   EMULATOR=polaris-fulfilment-emulator
   EMULATOR_GROUP_PREFIX=fulfilment.
   EMULATOR_PARTNERS=(partner-north partner-central partner-south)
+  # Hardening (K11): CNPG backups through the Barman Cloud plugin (next to the CNPG operator, platform/barman-cloud) to
+  # the bucket BACKUP_BUCKET on the in-cluster object store (SeaweedFS all-in-one in its own namespace,
+  # platform/object-store), with the S3 credentials in Secret OBJECT_STORE_CREDENTIALS (base/data/backup.yaml).
+  BARMAN_CLOUD_RELEASE=barman-cloud
+  OBJECT_STORE_RELEASE=seaweedfs
+  OBJECT_STORE_NAMESPACE=object-store
+  OBJECT_STORE_DEPLOYMENT=seaweedfs-all-in-one
+  OBJECT_STORE_CREDENTIALS=object-store-credentials
+  BACKUP_BUCKET=cnpg-backups
+  # The kind worker (kind/cluster.yaml) runs only the replicated stateless apps; the smoke test drains it.
+  STATELESS_POOL_LABEL=polaris.local/pool=stateless-apps
 }
 # kafka_pod <node id>: the pod name of a Kafka node.
 kafka_pod() { printf '%s-%s-%s' "$KAFKA_CLUSTER" "$KAFKA_NODE_POOL" "$1"; }
@@ -111,6 +122,11 @@ retry() {
     n=$((n + 1))
     delay=$((delay * 2))
   done
+}
+
+# secret_key <namespace> <secret> <key>: the decoded value of one key of a Secret, or nothing when it doesn't exist.
+secret_key() {
+  kctl -n "$1" get secret "$2" -o jsonpath="{.data.$3}" 2>/dev/null | base64 -d 2>/dev/null || true
 }
 
 sha256() {

@@ -1,0 +1,48 @@
+# Fulfilment emulator (K10). Nothing calls it: it has no route and its actuator is in-cluster only (kubelet probes). It
+# consumes and produces on Kafka, claims orders on polaris (REST, and the wait-for-polaris init container), gets its
+# client-credentials token from Keycloak through the Gateway (https://id.polaris.local), and exports to the Collector.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: polaris-fulfilment-emulator
+  labels:
+    app.kubernetes.io/name: polaris-fulfilment-emulator
+    app.kubernetes.io/part-of: polaris
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: polaris-fulfilment-emulator
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress: []
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              strimzi.io/cluster: kafka
+              strimzi.io/kind: Kafka
+      ports:
+        - protocol: TCP
+          port: 9092
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: polaris
+      ports:
+        - protocol: TCP
+          port: 8080
+    - to:
+        - podSelector:
+            matchLabels:
+              gateway.networking.k8s.io/gateway-name: polaris
+      ports:
+        - protocol: TCP
+          port: 443
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: otel-collector
+      ports:
+        - protocol: TCP
+          port: 4318

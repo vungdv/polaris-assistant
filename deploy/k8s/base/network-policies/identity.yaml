@@ -1,0 +1,91 @@
+# Identity (K7): the Keycloak server, its operator and the operator's realm import Job.
+#
+# The server is reached only by the Gateway's data plane, on 8080 (id.polaris.local); its management port (9000) serves
+# the kubelet's probes only. It writes to keycloak-db and exports its spans to the Collector (OTLP/gRPC).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: keycloak
+  labels:
+    app.kubernetes.io/name: keycloak
+    app.kubernetes.io/part-of: polaris
+spec:
+  podSelector:
+    matchLabels:
+      app: keycloak
+      app.kubernetes.io/component: server
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              gateway.networking.k8s.io/gateway-name: polaris
+      ports:
+        - protocol: TCP
+          port: 8080
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              cnpg.io/cluster: keycloak-db
+              cnpg.io/podRole: instance
+      ports:
+        - protocol: TCP
+          port: 5432
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: otel-collector
+      ports:
+        - protocol: TCP
+          port: 4317
+---
+# The Keycloak Operator reconciles the Keycloak and KeycloakRealmImport resources through the Kubernetes API only.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: keycloak-operator
+  labels:
+    app.kubernetes.io/name: keycloak-operator
+    app.kubernetes.io/part-of: polaris
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: keycloak-operator
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress: []
+  egress:
+    # The Kubernetes API (see kustomization.yaml).
+    - ports:
+        - protocol: TCP
+          port: 6443
+---
+# The realm import Job (KeycloakRealmImport polaris-realm) writes the realm straight into keycloak-db.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: keycloak-realm-import
+  labels:
+    app.kubernetes.io/name: keycloak
+    app.kubernetes.io/part-of: polaris
+spec:
+  podSelector:
+    matchLabels:
+      app: keycloak-realm-import
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress: []
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              cnpg.io/cluster: keycloak-db
+              cnpg.io/podRole: instance
+      ports:
+        - protocol: TCP
+          port: 5432

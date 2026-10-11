@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Renders every overlay and every platform kustomization (deploy/k8s/platform/*/) with `kubectl kustomize` and
 # validates the output with kubeconform in strict mode, against the schemas of the pinned Kubernetes version plus the
-# pinned CRDs catalog for custom resources (cert-manager, trust-manager, Gateway API, NGINX Gateway Fabric, CloudNativePG,
-# Strimzi, Keycloak).
+# pinned CRDs catalog for custom resources (cert-manager, trust-manager, Gateway API, NGINX Gateway Fabric, CloudNativePG
+# and its Barman Cloud plugin, Strimzi, Keycloak).
 # The Helm values of each platform component are rendered against their pinned chart. Needs no cluster.
 set -euo pipefail
 # shellcheck source=SCRIPTDIR/lib.sh
@@ -36,9 +36,14 @@ done
 # and the rendered manifests (including the custom resources the values produce, such as NGINX Gateway Fabric's
 # NginxProxy) are validated with kubeconform like the kustomizations above. CustomResourceDefinitions are skipped: they
 # come unchanged from the upstream chart, and the Kubernetes schemas catalog has no strict schema for them.
-# render_chart <chart> <version> <values-file>...
+# render_chart [--repo <url>] <chart> <version> <values-file>...   (--repo: a chart from a classic chart repository)
 render_chart() {
-  local chart="$1" version="$2" args=() file
+  local args=() file
+  if [ "$1" = --repo ]; then
+    args+=(--repo "$2")
+    shift 2
+  fi
+  local chart="$1" version="$2"
   shift 2
   for file in "$@"; do args+=(--values "$file"); done
   log "rendering $(basename "$chart") $version with $(printf '%s ' "${@#"$REPO_ROOT"/}")"
@@ -57,3 +62,8 @@ render_chart "$OTEL_COLLECTOR_CHART" "$OTEL_COLLECTOR_VERSION" "$K8S_DIR/platfor
 render_chart "$OTEL_COLLECTOR_CHART" "$OTEL_COLLECTOR_VERSION" "$K8S_DIR/platform/otel-agent/values.yaml"
 render_chart "$CNPG_CHART" "$CNPG_VERSION" "$K8S_DIR/platform/cloudnative-pg/values.yaml"
 render_chart "$STRIMZI_CHART" "$STRIMZI_VERSION" "$K8S_DIR/platform/strimzi/values.yaml"
+# K11: metrics-server, the Barman Cloud plugin and the object store.
+render_chart --repo "$METRICS_SERVER_REPO" "$METRICS_SERVER_CHART" "$METRICS_SERVER_VERSION" \
+  "$K8S_DIR/platform/metrics-server/values.yaml"
+render_chart "$BARMAN_CLOUD_CHART" "$BARMAN_CLOUD_VERSION" "$K8S_DIR/platform/barman-cloud/values.yaml"
+render_chart --repo "$SEAWEEDFS_REPO" "$SEAWEEDFS_CHART" "$SEAWEEDFS_VERSION" "$K8S_DIR/platform/object-store/values.yaml"

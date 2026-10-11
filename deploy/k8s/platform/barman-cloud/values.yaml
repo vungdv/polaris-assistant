@@ -1,0 +1,19 @@
+# Helm values for the CloudNativePG Barman Cloud plugin (K11, D2), installed by scripts/k8s/platform.sh from the
+# upstream chart ($BARMAN_CLOUD_CHART at $BARMAN_CLOUD_VERSION, deploy/k8s/versions.env) as the release `barman-cloud`
+# into the CNPG operator's namespace `cnpg-system`, which the plugin must share with the operator. It installs the
+# ObjectStore CRD (barmancloud.cnpg.io), and its serving and client certificates come from cert-manager (K3).
+#
+# The operator calls the plugin to add a sidecar to every PostgreSQL pod whose Cluster lists it (base/data). The
+# sidecar archives each WAL segment and takes the base backups to the ObjectStore's S3 bucket (base/data/backup.yaml),
+# and restores from it when a Cluster bootstraps with `recovery`. The chart's defaults already meet Pod Security
+# `restricted` (non-root UID 10001, read-only root filesystem, all capabilities dropped, seccomp RuntimeDefault).
+
+# The Deployment `barman-cloud` (the chart's default name repeats the release name).
+fullnameOverride: barman-cloud
+
+resources:
+  requests:
+    cpu: 20m
+    memory: 64Mi
+  limits:
+    memory: 256Mi

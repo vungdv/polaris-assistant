@@ -1,0 +1,78 @@
+# Backups of both PostgreSQL Clusters (K11, D2), through the CloudNativePG Barman Cloud plugin (platform/barman-cloud):
+#   - continuous WAL archiving: each Cluster lists the plugin as its WAL archiver (polaris-db.yaml, keycloak-db.yaml), so
+#     every completed WAL segment is copied to the object store;
+#   - base backups: a ScheduledBackup per Cluster, nightly, plus one as soon as it is created (`immediate`), so a new
+#     cluster can be restored from the start.
+# Restoring is a new Cluster with `bootstrap.recovery` from this ObjectStore and the source Cluster's name as serverName
+# (the smoke test does it for polaris-db). Both Clusters share the one ObjectStore: each writes under its own name.
+#
+# The bucket is on the in-cluster SeaweedFS (platform/object-store); a cloud overlay points destinationPath and
+# endpointURL at the cloud's object storage. The S3 credentials are in the Secret object-store-credentials, which
+# scripts/k8s/platform.sh generates (never committed, TR-K3).
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  name: cnpg-backups
+  labels:
+    app.kubernetes.io/name: cnpg-backups
+    app.kubernetes.io/part-of: polaris
+spec:
+  # Base backups and the WAL they need are kept for 7 days.
+  retentionPolicy: 7d
+  configuration:
+    destinationPath: s3://cnpg-backups/
+    endpointURL: http://seaweedfs-all-in-one.object-store.svc.cluster.local:8333
+    s3Credentials:
+      accessKeyId:
+        name: object-store-credentials
+        key: ACCESS_KEY_ID
+      secretAccessKey:
+        name: object-store-credentials
+        key: ACCESS_SECRET_KEY
+    wal:
+      compression: gzip
+    data:
+      compression: gzip
+  # The sidecar the plugin adds to every PostgreSQL pod.
+  instanceSidecarConfiguration:
+    resources:
+      requests:
+        cpu: 20m
+        memory: 64Mi
+      limits:
+        memory: 256Mi
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: polaris-db-nightly
+  labels:
+    app.kubernetes.io/name: polaris-db
+    app.kubernetes.io/part-of: polaris
+spec:
+  # CNPG's schedule has a seconds field: 02:00:00 every day.
+  schedule: "0 0 2 * * *"
+  immediate: true
+  backupOwnerReference: self
+  cluster:
+    name: polaris-db
+  method: plugin
+  pluginConfiguration:
+    name: barman-cloud.cloudnative-pg.io
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: keycloak-db-nightly
+  labels:
+    app.kubernetes.io/name: keycloak-db
+    app.kubernetes.io/part-of: polaris
+spec:
+  schedule: "0 30 2 * * *"
+  immediate: true
+  backupOwnerReference: self
+  cluster:
+    name: keycloak-db
+  method: plugin
+  pluginConfiguration:
+    name: barman-cloud.cloudnative-pg.io

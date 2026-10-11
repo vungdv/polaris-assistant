@@ -1,0 +1,33 @@
+# CPU autoscaling (K11, TR-K5): 2 to 4 replicas, aiming at 80% of the pods' CPU request on average, from the resource
+# metrics API (metrics-server, platform/metrics-server). Every replica is safe to add or remove at any time (TR-K5:
+# Flyway's lock, the outbox relay's row claims, the Kafka consumer group). A JVM's start-up and JIT burst (a minute or two
+# after it turns ready) must not trigger a scale-up of its own, so a scale-up needs 3 minutes of sustained load and adds
+# one replica a minute; scale-down keeps the default 5-minute window.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: polaris
+  labels:
+    app.kubernetes.io/name: polaris
+    app.kubernetes.io/part-of: polaris
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: polaris
+  minReplicas: 2
+  maxReplicas: 4
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 80
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 180
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 60
