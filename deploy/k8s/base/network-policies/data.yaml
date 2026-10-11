@@ -1,0 +1,169 @@
+# Data stores (K5, K11): the CloudNativePG pods of both Clusters, and Redis.
+#
+# Every CNPG-managed pod (instances and their bootstrap Jobs, of any Cluster, including a Cluster restored from a
+# backup) reaches the Kubernetes API (its instance manager and the Barman Cloud sidecar read and update their Cluster)
+# and the object store's S3 port (WAL archiving, base backups, recovery, K11), and is reached by the CNPG operator on
+# its instance manager's status port.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: cnpg-pods
+  labels:
+    app.kubernetes.io/part-of: polaris
+spec:
+  podSelector:
+    matchExpressions:
+      - key: cnpg.io/cluster
+        operator: Exists
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: cnpg-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: cloudnative-pg
+      ports:
+        - protocol: TCP
+          port: 8000
+  egress:
+    # The Kubernetes API (see kustomization.yaml).
+    - ports:
+        - protocol: TCP
+          port: 6443
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: object-store
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: seaweedfs
+              app.kubernetes.io/component: seaweedfs-all-in-one
+      ports:
+        - protocol: TCP
+          port: 8333
+---
+# polaris-db: the database of polaris and the assistant (shared, as in Compose). Its instances replicate among
+# themselves (streaming replication, and the instance managers' status port) when there is more than one.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: polaris-db
+  labels:
+    app.kubernetes.io/name: polaris-db
+    app.kubernetes.io/part-of: polaris
+spec:
+  podSelector:
+    matchLabels:
+      cnpg.io/cluster: polaris-db
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: polaris
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: polaris-assistant
+      ports:
+        - protocol: TCP
+          port: 5432
+    - from:
+        - podSelector:
+            matchLabels:
+              cnpg.io/cluster: polaris-db
+      ports:
+        - protocol: TCP
+          port: 5432
+        - protocol: TCP
+          port: 8000
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              cnpg.io/cluster: polaris-db
+      ports:
+        - protocol: TCP
+          port: 5432
+        - protocol: TCP
+          port: 8000
+---
+# keycloak-db: Keycloak's database, written by the server and by the realm import Job.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: keycloak-db
+  labels:
+    app.kubernetes.io/name: keycloak-db
+    app.kubernetes.io/part-of: polaris
+spec:
+  podSelector:
+    matchLabels:
+      cnpg.io/cluster: keycloak-db
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: keycloak
+              app.kubernetes.io/component: server
+        - podSelector:
+            matchLabels:
+              app: keycloak-realm-import
+      ports:
+        - protocol: TCP
+          port: 5432
+    - from:
+        - podSelector:
+            matchLabels:
+              cnpg.io/cluster: keycloak-db
+      ports:
+        - protocol: TCP
+          port: 5432
+        - protocol: TCP
+          port: 8000
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              cnpg.io/cluster: keycloak-db
+      ports:
+        - protocol: TCP
+          port: 5432
+        - protocol: TCP
+          port: 8000
+---
+# Redis: the product cache and the assistant's intents, for polaris and the assistant. It calls nothing.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: redis
+  labels:
+    app.kubernetes.io/name: redis
+    app.kubernetes.io/part-of: polaris
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: redis
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: polaris
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: polaris-assistant
+      ports:
+        - protocol: TCP
+          port: 6379
+  egress: []

@@ -1,0 +1,67 @@
+# NetworkPolicies of the object store's namespace (K11, TR-K10). Only the S3 gateway (8333) is authenticated (the
+# identity in object-store-s3-config); SeaweedFS's master (9333), volume (8080) and filer (8888) HTTP ports and their
+# gRPC ports take no credentials, and the filer would serve and delete every backup. So everything is denied in both
+# directions, and the one client is admitted: the CloudNativePG pods of `polaris` (instances, their Barman Cloud
+# sidecar, recovery Jobs), on the S3 port only. The mirror of their egress rule (base/network-policies/data.yaml).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: object-store
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+# The all-in-one server reaches its own master, volume server and filer by its pod address and through its Service
+# (WEED_CLUSTER_* in the pod, which `weed shell` uses when platform.sh creates the bucket), so it may talk to itself and
+# resolve names.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: seaweedfs
+  namespace: object-store
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: seaweedfs
+      app.kubernetes.io/component: seaweedfs-all-in-one
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: polaris
+          podSelector:
+            matchExpressions:
+              - key: cnpg.io/cluster
+                operator: Exists
+      ports:
+        - protocol: TCP
+          port: 8333
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: seaweedfs
+              app.kubernetes.io/component: seaweedfs-all-in-one
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: seaweedfs
+              app.kubernetes.io/component: seaweedfs-all-in-one
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53

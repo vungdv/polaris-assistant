@@ -1,0 +1,16 @@
+# Helm values for metrics-server (K11), installed by scripts/k8s/platform.sh from the upstream chart
+# ($METRICS_SERVER_CHART from $METRICS_SERVER_REPO at $METRICS_SERVER_VERSION, deploy/k8s/versions.env) into
+# `kube-system`. It serves the resource metrics API (metrics.k8s.io) that the HorizontalPodAutoscalers of polaris and
+# polaris-assistant read their pods' CPU from. The chart's container already meets Pod Security `restricted`.
+
+args:
+  # kind's kubelets serve a self-signed certificate that no cluster CA signs, so metrics-server can't verify it. A
+  # cloud cluster's kubelets have CA-signed serving certificates; its overlay drops this flag.
+  - --kubelet-insecure-tls
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    memory: 256Mi

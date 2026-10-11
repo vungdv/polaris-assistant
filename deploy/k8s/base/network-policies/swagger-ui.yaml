@@ -1,0 +1,25 @@
+# Swagger UI (K8). Called by the Gateway (/swagger-ui); calls nothing: the browser fetches the API documents and tokens
+# itself, through the Gateway.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: swagger-ui
+  labels:
+    app.kubernetes.io/name: swagger-ui
+    app.kubernetes.io/part-of: polaris
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: swagger-ui
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              gateway.networking.k8s.io/gateway-name: polaris
+      ports:
+        - protocol: TCP
+          port: 8080
+  egress: []

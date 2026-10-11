@@ -20,6 +20,13 @@ spec:
       encoding: UTF8
       localeCollate: en_US.utf8
       localeCType: en_US.utf8
+  # Continuous WAL archiving to the ObjectStore cnpg-backups (backup.yaml, K11) through the Barman Cloud plugin, which
+  # adds its sidecar to each instance. Base backups come from the ScheduledBackup there.
+  plugins:
+    - name: barman-cloud.cloudnative-pg.io
+      isWALArchiver: true
+      parameters:
+        barmanObjectName: cnpg-backups
   storage:
     size: 1Gi
   resources:

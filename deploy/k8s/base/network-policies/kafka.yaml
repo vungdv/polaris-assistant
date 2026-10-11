@@ -1,0 +1,74 @@
+# Kafka (K6): the three Strimzi nodes. Clients on the plain listener (9092): polaris (outbox relay, consumers) and the
+# fulfilment emulator, plus the nodes themselves (the admin CLI of `make k8s-kafka-*` runs inside a node). The nodes
+# talk to each other on the KRaft controller (9090), replication (9091) and plain (9092) ports. The Strimzi operator
+# (namespace strimzi) manages them through the controller and replication ports and the Kafka agent (8443). Each node
+# reads its own configuration Secrets from the Kubernetes API at start (Strimzi's KubernetesSecretConfigProvider).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: kafka
+  labels:
+    app.kubernetes.io/name: kafka
+    app.kubernetes.io/part-of: polaris
+spec:
+  podSelector:
+    matchLabels:
+      strimzi.io/cluster: kafka
+      strimzi.io/kind: Kafka
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: polaris
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: polaris-fulfilment-emulator
+      ports:
+        - protocol: TCP
+          port: 9092
+    - from:
+        - podSelector:
+            matchLabels:
+              strimzi.io/cluster: kafka
+              strimzi.io/kind: Kafka
+      ports:
+        - protocol: TCP
+          port: 9090
+        - protocol: TCP
+          port: 9091
+        - protocol: TCP
+          port: 9092
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: strimzi
+          podSelector:
+            matchLabels:
+              strimzi.io/kind: cluster-operator
+      ports:
+        - protocol: TCP
+          port: 9090
+        - protocol: TCP
+          port: 9091
+        - protocol: TCP
+          port: 8443
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              strimzi.io/cluster: kafka
+              strimzi.io/kind: Kafka
+      ports:
+        - protocol: TCP
+          port: 9090
+        - protocol: TCP
+          port: 9091
+        - protocol: TCP
+          port: 9092
+    # The Kubernetes API (see kustomization.yaml).
+    - ports:
+        - protocol: TCP
+          port: 6443

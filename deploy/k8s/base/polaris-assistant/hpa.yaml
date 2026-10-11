@@ -1,0 +1,34 @@
+# CPU autoscaling (K11, TR-K5): 2 to 4 replicas, aiming at 80% of the pods' CPU request on average, from the resource
+# metrics API (metrics-server, platform/metrics-server). Replicas share their sessions and drafts (JPA session store,
+# Redis intents), so any replica can serve any turn. A JVM's start-up and JIT burst (a minute or two after it turns
+# ready) must not trigger a scale-up of its own, so a scale-up needs 3 minutes of sustained load and adds one replica a
+# minute; scale-down keeps the default 5-minute window. Chat turns mostly wait on
+# the model, so they add little CPU: the assistant scales on the parsing and tool work around them.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: polaris-assistant
+  labels:
+    app.kubernetes.io/name: polaris-assistant
+    app.kubernetes.io/part-of: polaris
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: polaris-assistant
+  minReplicas: 2
+  maxReplicas: 4
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 80
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 180
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 60

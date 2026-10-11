@@ -1,0 +1,73 @@
+# Helm values for the in-cluster S3-compatible object store (K11, D2): SeaweedFS from its upstream chart
+# ($SEAWEEDFS_CHART from $SEAWEEDFS_REPO at $SEAWEEDFS_VERSION, deploy/k8s/versions.env), installed by
+# scripts/k8s/platform.sh as the release `seaweedfs` into its own namespace `object-store` (namespace.yaml). It stands
+# in for a cloud's object storage: the CNPG Clusters archive their WAL and base backups to its bucket `cnpg-backups`
+# through the Barman Cloud plugin (platform/barman-cloud, base/data/backup.yaml), and the restore check bootstraps a
+# new Cluster from it. A cloud overlay points the ObjectStore at the cloud's bucket and drops this release.
+#
+# All-in-one mode: master, volume server, filer and S3 gateway in one pod (Deployment `seaweedfs-all-in-one`, Service of
+# the same name, S3 on :8333), with its data on a PersistentVolumeClaim, so backups survive a pod restart.
+#
+# S3 credentials (TR-K3): the S3 gateway authenticates every request against the identities in the Secret
+# `object-store-s3-config` (key seaweedfs_s3_config). platform.sh generates the access key and secret at random on the
+# first run, keeps them on later runs, and writes them both there and to `polaris/object-store-credentials`, which the
+# ObjectStore reads. Nothing is committed. The one identity may only use the bucket `cnpg-backups`.
+
+global:
+  seaweedfs:
+    # The all-in-one server doesn't call the Kubernetes API: no ClusterRole, and no service account token.
+    createClusterRole: false
+    automountServiceAccountToken: false
+
+# Only the all-in-one server runs.
+master:
+  enabled: false
+volume:
+  enabled: false
+filer:
+  enabled: false
+s3:
+  enabled: false
+
+allInOne:
+  enabled: true
+  s3:
+    enabled: true
+    enableAuth: true
+    existingConfigSecret: object-store-s3-config
+    # The bucket is created by platform.sh with `weed shell` in the server's pod: the chart's bucket hook Job sets no
+    # security context, so Pod Security `restricted` would reject it.
+  data:
+    type: persistentVolumeClaim
+    size: 2Gi
+  # One replica on kind's single schedulable node for stateful pods: no anti-affinity to satisfy.
+  affinity: ""
+  # Pod Security `restricted` (namespace.yaml enforces it): the chart sets no security context by default, and renders
+  # these only with `enabled: true` (a chart switch, not a Kubernetes field).
+  podSecurityContext:
+    enabled: true
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+    seccompProfile:
+      type: RuntimeDefault
+  containerSecurityContext:
+    enabled: true
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop: ["ALL"]
+  extraVolumes: |
+    - name: tmp
+      emptyDir:
+        sizeLimit: 64Mi
+  extraVolumeMounts: |
+    - name: tmp
+      mountPath: /tmp
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 512Mi

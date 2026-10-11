@@ -4,11 +4,24 @@
 # Host ports 80/443 reach fixed NodePorts 30080/30443 on the node. The Gateway data plane (K3) is exposed as a
 # NodePort Service on those ports, so no pod needs hostPort (disallowed by Pod Security `restricted`).
 # Compose's nginx also binds 80/443: stop it (`make down`) before `make k8s-up`, or pass KIND_CONFIG with other ports.
+#
+# Two nodes (K11), so a node can be drained under load (TR-K5):
+#   - the control plane runs every workload, as the single node did before K11. kubeadm taints a control plane once a
+#     cluster has workers; the patch keeps it schedulable. The stateful pods (PostgreSQL, Kafka, the object store) stay
+#     here: their volumes are local to this node (kind's local-path StorageClass).
+#   - the worker runs only pods that tolerate its taint: the replicated stateless apps, polaris and polaris-assistant
+#     (overlays/local), spread across both nodes (base topologySpreadConstraints). Draining it moves their replicas to
+#     the control plane one PodDisruptionBudget-allowed eviction at a time, with no other workload on it.
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 name: polaris
 nodes:
   - role: control-plane
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          taints: []
     extraPortMappings:
       - containerPort: 30080
         hostPort: 80
@@ -16,3 +29,14 @@ nodes:
       - containerPort: 30443
         hostPort: 443
         protocol: TCP
+  - role: worker
+    labels:
+      polaris.local/pool: stateless-apps
+    kubeadmConfigPatches:
+      - |
+        kind: JoinConfiguration
+        nodeRegistration:
+          taints:
+            - key: polaris.local/pool
+              value: stateless-apps
+              effect: NoSchedule

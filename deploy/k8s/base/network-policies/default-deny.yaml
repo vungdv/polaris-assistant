@@ -1,0 +1,38 @@
+# Default deny (K11, TR-K10): every pod in the namespace, present or future, gets no ingress and no egress unless a
+# policy below allows it. A pod that no other policy selects (one outside the allow list) can only resolve names.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  labels:
+    app.kubernetes.io/part-of: polaris
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+# DNS for every pod: cluster DNS (CoreDNS in kube-system), which also answers *.polaris.local with the Gateway (K3).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dns
+  labels:
+    app.kubernetes.io/part-of: polaris
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53

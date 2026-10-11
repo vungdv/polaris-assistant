@@ -21,6 +21,9 @@ metadata:
     app.kubernetes.io/name: polaris
     app.kubernetes.io/part-of: polaris
 spec:
+  # The HorizontalPodAutoscaler (hpa.yaml) scales between 2 and 4 replicas on CPU (K11). The Deployment keeps
+  # replicas: 2, its minimum, so the first start runs both replicas together (K8's concurrent Flyway check); a
+  # re-apply under load resets it to 2 and the HPA scales it back within a sync period.
   replicas: 2
   # A rolling restart never drops below two ready pods.
   strategy:
@@ -37,6 +40,20 @@ spec:
         app.kubernetes.io/name: polaris
         app.kubernetes.io/part-of: polaris
     spec:
+      # One replica per node while there are nodes to spread over (K11), so draining a node never takes every
+      # replica at once. Nodes whose taints the pods don't tolerate, such as a cordoned node being drained, are not
+      # counted (nodeTaintsPolicy: Honor), so the evicted replica reschedules onto the remaining nodes. Each
+      # ReplicaSet spreads on its own (pod-template-hash), so a rolling update isn't held back by the old pods.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          nodeTaintsPolicy: Honor
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: polaris
+          matchLabelKeys:
+            - pod-template-hash
       automountServiceAccountToken: false
       enableServiceLinks: false
       terminationGracePeriodSeconds: 40

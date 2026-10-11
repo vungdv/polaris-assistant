@@ -1,0 +1,69 @@
+# Order & Catalog (K8). Called by the Gateway (/, /mcp/), the assistant (MCP + REST) and the fulfilment emulator
+# (claims REST); calls its database, Redis, Kafka, the Collector (OTLP/HTTP) and Keycloak's JWKS through the Gateway
+# (https://id.polaris.local).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: polaris
+  labels:
+    app.kubernetes.io/name: polaris
+    app.kubernetes.io/part-of: polaris
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: polaris
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              gateway.networking.k8s.io/gateway-name: polaris
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: polaris-assistant
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: polaris-fulfilment-emulator
+      ports:
+        - protocol: TCP
+          port: 8080
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              cnpg.io/cluster: polaris-db
+              cnpg.io/podRole: instance
+      ports:
+        - protocol: TCP
+          port: 5432
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: redis
+      ports:
+        - protocol: TCP
+          port: 6379
+    - to:
+        - podSelector:
+            matchLabels:
+              strimzi.io/cluster: kafka
+              strimzi.io/kind: Kafka
+      ports:
+        - protocol: TCP
+          port: 9092
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: otel-collector
+      ports:
+        - protocol: TCP
+          port: 4318
+    - to:
+        - podSelector:
+            matchLabels:
+              gateway.networking.k8s.io/gateway-name: polaris
+      ports:
+        - protocol: TCP
+          port: 443
