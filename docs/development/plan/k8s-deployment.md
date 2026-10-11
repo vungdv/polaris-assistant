@@ -23,12 +23,12 @@ Compose stays the inner-loop dev environment. Kubernetes doesn't replace it in t
 | TR-K2 | **Reproducible:** one command creates the cluster and deploys everything from a clean machine. Every image and chart version is pinned. Application images are tagged with the git SHA, never `latest` |
 | TR-K3 | **Config as data (12-factor):** non-secret config in ConfigMaps, credentials in Secrets generated from an untracked env file (the same keys as `.env.template`). Exception: database credentials are operator-generated CNPG Secrets (`<cluster>-app`), not env-file keys. No credential is committed |
 | TR-K4 | **Health-driven lifecycle:** each app has `startupProbe`, `livenessProbe` and `readinessProbe` on the existing `/actuator/health/{liveness,readiness}` groups, graceful shutdown (`server.shutdown=graceful`, a `preStop` drain and a matching `terminationGracePeriodSeconds`), and resource requests and limits |
-| TR-K5 | **Multi-replica safe:** `polaris` and `polaris-assistant` run 2 replicas with a PodDisruptionBudget. Flyway migrations, the outbox relay and Kafka consumer groups stay correct when replicas start, stop or roll concurrently |
+| TR-K5 | **Multi-replica safe:** `polaris` and `polaris-assistant` run 2 replicas with a PodDisruptionBudget. With the K11 HPA, the Deployments keep `replicas: 2`, so a re-apply resets the count to 2 until the next HPA sync. Flyway migrations, the outbox relay and Kafka consumer groups stay correct when replicas start, stop or roll concurrently |
 | TR-K6 | **Stateful parity:** PostgreSQL, Kafka (3-node KRaft, RF 3, min ISR 2, no topic auto-creation) and Keycloak keep their Compose semantics. Data survives pod restarts. Losing one Kafka node loses no `acks=all` write. Accepted deviation: Kafka runs 4.1.1 (Strimzi 0.49 supports only 4.0/4.1, and the pinned CRDs catalog limits Strimzi to 0.49); Compose moves to 4.1.x to match |
 | TR-K7 | **Standard edge:** north–south traffic goes through the Gateway API (`Gateway` + `HTTPRoute`). TLS for `polaris.local`, `id.polaris.local` and `grafana.polaris.local` comes from cert-manager. SSE routes don't buffer and allow long-lived streams |
 | TR-K8 | **One issuer:** tokens are issued and validated against the public issuer `https://id.polaris.local/realms/polaris`, both from browsers and from inside the cluster. Apps trust the cluster CA through a mounted truststore, not by running as root |
 | TR-K9 | **Observable by default:** every app and the gateway export OTLP to an in-cluster OTel Collector. Telemetry carries Kubernetes resource attributes (`k8s.namespace.name`, `k8s.pod.name`, `k8s.deployment.name`). W3C trace context is continuous gateway → `polaris` → `polaris-assistant` (MCP) → Kafka → emulator |
-| TR-K10 | **Least privilege:** the namespace enforces Pod Security `restricted`. Pods run non-root with a read-only root filesystem where possible. Accepted exception (K4): the `observability` namespace runs Pod Security `privileged` for the `otel-agent` log DaemonSet (read-only hostPath to the Gateway pod's logs, no token, no ports, all capabilities dropped), because NGF has no syslog or OTLP access-log output. Accepted trade-off (K7): the Keycloak Operator runs in `polaris` (upstream watches only its own namespace) and can read and write every Secret there. NetworkPolicies default-deny and allow only the flows listed in §Topology |
+| TR-K10 | **Least privilege:** the namespace enforces Pod Security `restricted`. Pods run non-root with a read-only root filesystem where possible. Accepted exception (K4): the `observability` namespace runs Pod Security `privileged` for the `otel-agent` log DaemonSet (read-only hostPath to the Gateway pod's logs, no token, no ports, all capabilities dropped), because NGF has no syslog or OTLP access-log output. Accepted trade-off (K7): the Keycloak Operator runs in `polaris` (upstream watches only its own namespace) and can read and write every Secret there. NetworkPolicies default-deny and allow only the flows listed in §Topology. The `object-store` namespace (K11) also enforces `restricted` and default-deny. NetworkPolicy can't name hosts, so the kube-apiserver edge is TCP 6443 to any address and the external APIs (Gemini, TypeSafe, Grafana Cloud) are TCP 443 to public addresses, each only for the pods that need them; a cloud overlay narrows them to real CIDRs |
 | TR-K11 | **Verified in CI:** every slice adds to an automated smoke test that runs against a kind cluster in GitHub Actions, on the same public interfaces used in production (HTTPS through the gateway, OIDC, Kafka) |
 
 ## Decisions (to confirm in K1's ADR)
@@ -36,7 +36,7 @@ Compose stays the inner-loop dev environment. Kubernetes doesn't replace it in t
 | # | Decision | Default chosen | Why | Alternative |
 |:--|:--|:--|:--|:--|
 | D1 | Packaging for our apps | **Kustomize** | Ships with `kubectl`, no templating language, overlays map cleanly to environments | Helm umbrella chart |
-| D2 | PostgreSQL | **CloudNativePG** operator, one `Cluster` per owner (`polaris-db`, `keycloak-db`) | Declarative backups (configured in K11), failover, standard Postgres images | Bitnami chart, plain StatefulSet |
+| D2 | PostgreSQL | **CloudNativePG** operator, one `Cluster` per owner (`polaris-db`, `keycloak-db`) | Declarative backups (configured in K11 with the Barman Cloud plugin, not the deprecated in-tree `barmanObjectStore`, to an in-cluster SeaweedFS S3 store; MinIO's community chart is stale), failover, standard Postgres images | Bitnami chart, plain StatefulSet |
 | D3 | Kafka | **Strimzi** operator, KRaft `KafkaNodePool` of 3 dual-role nodes | Same topology as Compose (TR-B1); operator-managed rolling restarts | Bitnami chart |
 | D4 | Keycloak | **Keycloak Operator** with `KeycloakRealmImport` for `polaris` (the master realm is imported by the server at first start with `--import-realm`, because the operator's import runs after the built-in master exists and skips it) (placeholders from a Secret for `DEFAULT_PASSWORD` and the emulator secret) | Production mode instead of `start-dev`; upstream-supported realm import | Plain Deployment with `--import-realm` |
 | D5 | Gateway | **Gateway API** with **NGINX Gateway Fabric** | Gateway API is the standard successor to Ingress (ingress-nginx is retired); keeps nginx semantics and native OTel tracing | Envoy Gateway |
@@ -70,19 +70,27 @@ flowchart LR
   polaris & assistant & emu -.->|JWKS via id.polaris.local| gw
 ```
 
-The edges above are also the NetworkPolicy allow list (K11).
+The edges above are also the NetworkPolicy allow list (K11), together with these platform and operator edges, each scoped to the operator's or cluster's own labels:
+
+- CNPG instances → object store (S3, TCP 8333): WAL archiving and base backups
+- NGF data plane → NGF control plane (gRPC 8443)
+- CNPG operator → instances (8000); CNPG instance ↔ instance
+- Strimzi operator → Kafka (9090, 9091, 8443); Kafka ↔ Kafka
+- kube-apiserver for the CNPG pods (Barman sidecar included), the Kafka nodes (Strimzi's config provider reads Secrets at start) and the Keycloak operator
 
 ## Repository layout
 
 ```
 deploy/k8s/
-  kind/cluster.yaml                # kind config: ingress port mappings 80/443
+  kind/cluster.yaml                # kind config: ingress port mappings 80/443; since K11 a control plane plus a
+                                   # tainted worker for the drain test (recreate pre-K11 clusters: make k8s-down k8s-up)
   platform/                        # pinned Helm values and operator CRs (cert-manager, trust-manager,
-                                   # gateway, CNPG, Strimzi, Keycloak operator, OTel Collector)
+                                   # gateway, CNPG, Strimzi, Keycloak operator, OTel Collector, metrics-server,
+                                   # Barman Cloud plugin, object store)
   base/
     namespace.yaml                 # Pod Security restricted
     polaris/ polaris-assistant/ polaris-fulfilment-emulator/ swagger-ui/ redis/
-    data/ kafka/ keycloak/ edge/ observability/
+    data/ kafka/ keycloak/ edge/ observability/ network-policies/
   overlays/local/                  # image tags, replica counts, secretGenerator from deploy/k8s/.env.local
 scripts/k8s/                       # up.sh, down.sh, smoke.sh, plus helpers: lib.sh, tools.sh, validate.sh
 ```
@@ -192,6 +200,7 @@ Slices run top to bottom; only the `execute-plan` coordinator edits this table.
 - HPA on CPU for `polaris` and `polaris-assistant` (min 2, max 4 locally). metrics-server installed in kind.
 - Every pod passes Pod Security `restricted`, which the namespace has enforced since K1 (TR-K10).
 - CNPG backups for `polaris-db` and `keycloak-db`: a `ScheduledBackup` plus continuous WAL archiving to an in-cluster S3-compatible object store (pinned upstream chart, credentials from a Secret). Smoke: a backup completes, and a new `Cluster` bootstrapped from it (recovery) contains the smoke row.
+- The smoke probes talk to components directly, so while `smoke.sh` runs a test-only policy admits pods labelled `polaris.local/smoke-probe=true`. It is removed on exit and never deployed.
 - Smoke: a pod outside the allow list can't reach `polaris-db` or Kafka. Draining a kind node during `api-test.js` keeps the error rate at 0, thanks to the PDBs.
 
 ### K12: Local LGTM stack and runbook
@@ -223,3 +232,4 @@ Slices run top to bottom; only the `execute-plan` coordinator edits this table.
 | 2026-10-08 | D4/K7: master realm imported by the server at first start; only polaris uses KeycloakRealmImport. K9 seed-shoppers and K12 runbook use the operator bootstrap admin and grafana-admin. K10 reads the emulator secret from keycloak-realm-placeholders and adds it to .env.template. K11 adds Keycloak operator, import Job and NGF→Keycloak edges; TR-K10 records the operator Secret access as accepted | Findings from the K7 review | K7, K9, K10, K11, K12 |
 | 2026-10-10 | K9 records the `wait-for-polaris` init container (Compose `depends_on: service_healthy` equivalent, orders `ddl-auto` after Flyway). The `ddl-auto` follow-up risk adds the two-replica first-start `CREATE TABLE` race | Findings from the K9 review | K9 |
 | 2026-10-10 | K10 smoke checks `DELIVERED` plus the five `order.*.v1` events (there is no `DISPATCHED` status). K10 records the `wait-for-polaris` init container | Findings from implementing and reviewing K10 | K10 |
+| 2026-10-11 | §Topology lists the platform and operator edges. TR-K10 records address-based apiserver and external-API rules and the `object-store` namespace. D2 records the Barman Cloud plugin and SeaweedFS. TR-K5 records `replicas: 2` kept next to the HPA. §Layout records the two-node kind cluster and new dirs. K11 records the test-only smoke-probe policy | Findings from implementing and reviewing K11 | K11 |
