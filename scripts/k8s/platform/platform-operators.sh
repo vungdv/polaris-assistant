@@ -3,8 +3,8 @@
 # cluster operator (K6), the Keycloak Operator and its CRDs (K7), metrics-server and the CNPG Barman Cloud plugin (K11).
 # Needs cert-manager (platform-cert-manager.sh). Safe to re-run.
 set -euo pipefail
-# shellcheck source=SCRIPTDIR/lib.sh
-source "$(dirname "$0")/lib.sh"
+# shellcheck source=SCRIPTDIR/../lib.sh
+source "$(dirname "$0")/../lib.sh"
 
 ensure_tools_cluster
 

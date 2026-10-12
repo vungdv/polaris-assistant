@@ -13,19 +13,19 @@ log "step 2/10: up-cluster (kind cluster)"
 "$K8S_SCRIPTS/up-cluster.sh"
 
 log "step 3/10: platform-cert-manager (cert-manager, trust-manager, cluster PKI)"
-"$K8S_SCRIPTS/platform-cert-manager.sh"
+"$K8S_SCRIPTS/platform/platform-cert-manager.sh"
 
 log "step 4/10: platform-gateway (Gateway API, NGINX Gateway Fabric, CoreDNS rewrite)"
-"$K8S_SCRIPTS/platform-gateway.sh"
+"$K8S_SCRIPTS/platform/platform-gateway.sh"
 
 log "step 5/10: platform-observability (OpenTelemetry Collector and log agent)"
-"$K8S_SCRIPTS/platform-observability.sh"
+"$K8S_SCRIPTS/platform/platform-observability.sh"
 
 log "step 6/10: platform-operators (CloudNativePG, Strimzi, Keycloak, metrics-server, Barman Cloud)"
-"$K8S_SCRIPTS/platform-operators.sh"
+"$K8S_SCRIPTS/platform/platform-operators.sh"
 
 log "step 7/10: platform-object-store (S3 object store and backup bucket)"
-"$K8S_SCRIPTS/platform-object-store.sh"
+"$K8S_SCRIPTS/platform/platform-object-store.sh"
 
 log "step 8/10: apply-secrets (Keycloak realm placeholders, assistant credentials)"
 "$K8S_SCRIPTS/apply-secrets.sh"

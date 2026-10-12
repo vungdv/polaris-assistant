@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Installs cert-manager, trust-manager and the cluster PKI (root CA, CA ClusterIssuer, trust Bundle) (K3). Safe to re-run.
 set -euo pipefail
-# shellcheck source=SCRIPTDIR/lib.sh
-source "$(dirname "$0")/lib.sh"
+# shellcheck source=SCRIPTDIR/../lib.sh
+source "$(dirname "$0")/../lib.sh"
 
 ensure_tools_cluster
 

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Installs the OpenTelemetry Collector and its log agent (K4). Safe to re-run.
 set -euo pipefail
-# shellcheck source=SCRIPTDIR/lib.sh
-source "$(dirname "$0")/lib.sh"
+# shellcheck source=SCRIPTDIR/../lib.sh
+source "$(dirname "$0")/../lib.sh"
 
 ensure_tools_cluster
 

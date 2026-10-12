@@ -2,8 +2,8 @@
 # Installs the edge (K3): the Gateway API CRDs, NGINX Gateway Fabric and the CoreDNS rewrite of *.polaris.local.
 # Needs the PKI of platform-cert-manager.sh. Safe to re-run.
 set -euo pipefail
-# shellcheck source=SCRIPTDIR/lib.sh
-source "$(dirname "$0")/lib.sh"
+# shellcheck source=SCRIPTDIR/../lib.sh
+source "$(dirname "$0")/../lib.sh"
 
 ensure_tools_cluster
 
