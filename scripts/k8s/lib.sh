@@ -109,6 +109,22 @@ ensure_tools() { "$REPO_ROOT/scripts/k8s/tools.sh" "$@"; }
 
 kctl() { kubectl --context "$KUBE_CONTEXT" "$@"; }
 
+# platform_preflight: the checks every platform-*.sh step starts with, so each can run on its own.
+ensure_tools_cluster() {
+  ensure_tools kubectl helm
+  cluster_exists || die "kind cluster '$KIND_CLUSTER_NAME' doesn't exist; run 'make k8s-up'"
+}
+
+# helm_install <release> <namespace> <chart> <version> [helm args, e.g. --values <file>]...
+# `upgrade --install` converges an existing release to the pinned version and values; --wait bounds readiness.
+helm_install() {
+  local release="$1" namespace="$2" chart="$3" version="$4"
+  shift 4
+  log "installing $release $version into namespace $namespace"
+  helm --kube-context "$KUBE_CONTEXT" upgrade --install "$release" "$chart" --version "$version" \
+    --namespace "$namespace" --create-namespace "$@" --wait --timeout "$K8S_WAIT_TIMEOUT" >/dev/null
+}
+
 # retry <attempts> <command...>: runs the command until it succeeds, with exponential backoff (2s, 4s, 8s, ...).
 # For calls that race a component's readiness, such as an admission webhook whose Pod is Ready before its serving
 # certificate is injected.
@@ -135,8 +151,6 @@ sha256() {
 
 cluster_exists() { kind get clusters 2>/dev/null | grep -qx "$KIND_CLUSTER_NAME"; }
 
-# Rewrites the kubeconfig entry of an existing cluster from kind, so a deleted file or stale credentials (the cluster
-# was recreated from another worktree or by hand) never survive. Cheap and idempotent.
 ensure_kubeconfig() {
   log "writing the kubeconfig of cluster '$KIND_CLUSTER_NAME' to $K8S_KUBECONFIG"
   kind export kubeconfig --name "$KIND_CLUSTER_NAME" --kubeconfig "$K8S_KUBECONFIG"
@@ -152,12 +166,8 @@ IMAGE_PINS="$K8S_DIR/overlays/local/images/kustomization.yaml"
 
 app_image() { printf '%s/%s:%s' "$IMAGE_REGISTRY" "$1" "$IMAGE_TAG"; }
 
-# image_loaded <image>: whether the kind node already holds the image (loaded by `make k8s-images`).
 image_loaded() { docker exec "$KIND_CLUSTER_NAME-control-plane" crictl inspecti "$1" >/dev/null 2>&1; }
 
-# Writes the untracked Kustomize component that pins the local overlay's app images to IMAGE_TAG (the git SHA), so the
-# tag follows the checkout without a committed value to bump on every commit. Base manifests name each image by its
-# app name (`image: polaris`); the component maps it to $IMAGE_REGISTRY/<app>:<sha>.
 write_image_pins() {
   local app
   mkdir -p "$(dirname "$IMAGE_PINS")"
@@ -170,9 +180,6 @@ write_image_pins() {
   } >"$IMAGE_PINS"
 }
 
-# stage_keycloak_operator <dir>: copies platform/keycloak-operator into <dir> and downloads the Keycloak Operator's
-# upstream release manifests (the two CRDs and kubernetes.yml at KEYCLOAK_VERSION) next to it, each verified against
-# its pinned SHA-256 (TR-K1: nothing upstream is copied into the repo). <dir> is then a complete kustomization.
 stage_keycloak_operator() {
   local dir="$1" file sum
   local base="https://github.com/keycloak/keycloak-k8s-resources/raw/refs/tags/$KEYCLOAK_VERSION/kubernetes"
@@ -188,14 +195,6 @@ stage_keycloak_operator() {
   done
 }
 
-# Writes the untracked Kustomize component (REALM_COMPONENT) that imports the realms of docker/keycloak, the single
-# source shared with Compose, so no copy is committed:
-#   - polaris-realm.json as a KeycloakRealmImport. The CRD takes the realm inline (spec.realm), so the file is embedded
-#     as is. Its ${DEFAULT_PASSWORD} and ${POLARIS_FULFILMENT_EMULATOR_SECRET} stay placeholders: the operator's import
-#     Job resolves them from the Secret KEYCLOAK_REALM_SECRET (spec.placeholders), as Compose resolves them from .env.
-#   - master-realm.json as the ConfigMap keycloak-master-realm, which the Keycloak server imports at its first start
-#     (base/keycloak/keycloak.yaml explains why the master realm can't be a KeycloakRealmImport).
-# JSON is valid manifest input for kubectl and Kustomize, so jq builds both resources without a YAML conversion.
 write_realm_imports() {
   command -v jq >/dev/null || die "jq is required to generate the Keycloak realm imports"
   mkdir -p "$REALM_COMPONENT"
