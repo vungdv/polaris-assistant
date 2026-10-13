@@ -26,6 +26,15 @@ patches:
       - op: add
         path: /spec/enablePDB
         value: false
+  # Chat turns on a laptop average ~16 s and a turn that also waits on TypeSafe and tool calls can exhaust the base 25 s
+  # budget mid-Gemini-call, so the local turn deadline is longer. The base keeps 25 s (below the 30 s chat latency SLO).
+  - target:
+      kind: ConfigMap
+      name: polaris-assistant
+    patch: |-
+      - op: add
+        path: /data/POLARIS_AI_TURN_DEADLINE
+        value: 40s
   # Node drain (K11): polaris and polaris-assistant, the replicated stateless apps, also run on the kind worker, whose
   # taint keeps every other pod off it (kind/cluster.yaml). Their topology spread puts one replica on each node.
   - target:
