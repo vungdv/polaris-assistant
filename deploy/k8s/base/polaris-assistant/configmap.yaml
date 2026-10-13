@@ -20,21 +20,21 @@ data:
   SERVER_PORT: "8081"
   SERVER_FORWARD_HEADERS_STRATEGY: framework
   SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: https://id.polaris.local/realms/polaris
-  SPRING_DATASOURCE_URL: jdbc:postgresql://polaris-db-rw:5432/polaris
+  SPRING_DATASOURCE_URL: jdbc:postgresql://polaris-db-rw.polaris.svc.cluster.local:5432/polaris
   SPRING_DATASOURCE_DRIVER_CLASS_NAME: org.postgresql.Driver
   SPRING_JPA_SHOW_SQL: "false"
   # MCP and the Order Management REST API on the polaris Service (K8).
-  POLARIS_MCP_CORE_URL: http://polaris:8080/mcp
-  POLARIS_MCP_CORE_MESSAGE_ENDPOINT: http://polaris:8080/mcp
-  POLARIS_CORE_API_BASE_URL: http://polaris:8080
-  SPRING_DATA_REDIS_HOST: redis
+  POLARIS_MCP_CORE_URL: http://polaris.polaris.svc.cluster.local:8080/mcp
+  POLARIS_MCP_CORE_MESSAGE_ENDPOINT: http://polaris.polaris.svc.cluster.local:8080/mcp
+  POLARIS_CORE_API_BASE_URL: http://polaris.polaris.svc.cluster.local:8080
+  SPRING_DATA_REDIS_HOST: redis.polaris.svc.cluster.local
   SPRING_DATA_REDIS_PORT: "6379"
   SPRINGDOC_SWAGGER_UI_OAUTH_CLIENT_ID: polaris-app
   SPRINGDOC_SWAGGER_UI_OAUTH_USE_PKCE_WITH_AUTHORIZATION_CODE_GRANT: "true"
   JAVA_TOOL_OPTIONS: -Djavax.net.ssl.trustStore=/etc/polaris-trust/truststore.jks -XX:MaxRAMPercentage=70
-  MANAGEMENT_OTLP_METRICS_EXPORT_URL: http://otel-collector:4318/v1/metrics
-  MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT: http://otel-collector:4318/v1/traces
-  MANAGEMENT_OPENTELEMETRY_LOGGING_EXPORT_OTLP_ENDPOINT: http://otel-collector:4318/v1/logs
+  MANAGEMENT_OTLP_METRICS_EXPORT_URL: http://otel-collector.polaris.svc.cluster.local:4318/v1/metrics
+  MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT: http://otel-collector.polaris.svc.cluster.local:4318/v1/traces
+  MANAGEMENT_OPENTELEMETRY_LOGGING_EXPORT_OTLP_ENDPOINT: http://otel-collector.polaris.svc.cluster.local:4318/v1/logs
   # Every request is sampled at the Gateway; the assistant honours the parent's flag (and samples its own roots).
   MANAGEMENT_TRACING_SAMPLING_PROBABILITY: "1.0"
   MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS: always
