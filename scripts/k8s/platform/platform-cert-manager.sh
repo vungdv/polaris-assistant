@@ -15,8 +15,11 @@ install_pki() {
   kctl wait --for=condition=Ready clusterissuer/polaris-ca --timeout="$K8S_WAIT_TIMEOUT" >/dev/null
 }
 
+echo "heml_install cert-manager ..."
 helm_install cert-manager cert-manager "$CERT_MANAGER_CHART" "$CERT_MANAGER_VERSION" \
   --values "$PLATFORM_DIR/cert-manager/values.yaml"
+
+echo "heml_install trust-manager ..."
 helm_install trust-manager cert-manager "$TRUST_MANAGER_CHART" "$TRUST_MANAGER_VERSION" \
   --values "$PLATFORM_DIR/trust-manager/values.yaml"
 install_pki
