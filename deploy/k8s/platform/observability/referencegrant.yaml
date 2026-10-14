@@ -1,0 +1,15 @@
+# Lets the HTTPRoute `grafana` in `polaris` (base/grafana), the namespace the Gateway's listeners accept routes from,
+# send traffic to the Service `grafana` here. Nothing else in this namespace is reachable from a route.
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: ReferenceGrant
+metadata:
+  name: grafana-from-polaris-routes
+spec:
+  from:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      namespace: polaris
+  to:
+    - group: ""
+      kind: Service
+      name: grafana

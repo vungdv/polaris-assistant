@@ -1,0 +1,114 @@
+# Helm values for Grafana (K12, D8), installed by scripts/k8s/platform/platform-lgtm.sh from the upstream chart
+# ($GRAFANA_CHART from $GRAFANA_COMMUNITY_REPO at $GRAFANA_VERSION, deploy/k8s/versions.env) into the `observability`
+# namespace as the Deployment and Service `grafana` (:3000), served at https://grafana.polaris.local by the HTTPRoute in
+# base/grafana. The Gateway's listener `https-grafana` accepts routes from `polaris` only, so the route lives there and
+# reaches this namespace through the ReferenceGrant in platform/observability.
+#
+# Ported from the Compose service (docker-compose.otel.yml):
+#   - the datasources are the Compose provisioning file, docker/telemetry/grafana/provisioning/datasources/datasources.yml,
+#     unchanged: its URLs (http://prometheus:9090, http://loki:3100, http://tempo:3200) are the Service names of the
+#     charts here. platform-lgtm.sh puts it in the ConfigMap `grafana-datasources`.
+#   - the dashboards are the Compose JSON, docker/telemetry/grafana/provisioning/dashboards/json, in the ConfigMap
+#     `grafana-dashboards`, read-only in the UI as in Compose.
+#   - staff SSO through the Keycloak master realm (client `grafana`, a public client protected by PKCE S256, imported
+#     from docker/keycloak/master-realm.json), with the same role mapping: only the `grafana` client roles count, and a
+#     user without one can't log in. Grafana reaches Keycloak at https://id.polaris.local (CoreDNS rewrite to the
+#     Gateway) and trusts the cluster root CA from the trust-manager bundle.
+#   - the admin account is the Secret `grafana-admin` (platform-lgtm.sh: user `admin`, DEFAULT_PASSWORD from
+#     keycloak-realm-placeholders in `polaris`), never a value in this file.
+# Pod Security `restricted`: the chart's contexts are non-root with a read-only root filesystem and no capabilities.
+
+fullnameOverride: grafana
+
+# The Gateway route and the datasources address the port by number.
+service:
+  port: 3000
+
+admin:
+  existingSecret: grafana-admin
+  userKey: admin-user
+  passwordKey: admin-password
+
+persistence:
+  enabled: true
+  size: 2Gi
+# The root init container that chowns the volume violates Pod Security `restricted`; the pod's fsGroup does it.
+initChownData:
+  enabled: false
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    memory: 512Mi
+
+# No sidecars, no plugin downloads, no Kubernetes API access.
+sidecar:
+  dashboards:
+    enabled: false
+  datasources:
+    enabled: false
+rbac:
+  create: false
+automountServiceAccountToken: false
+serviceAccount:
+  automountServiceAccountToken: false
+testFramework:
+  enabled: false
+
+extraConfigmapMounts:
+  - name: datasources
+    mountPath: /etc/grafana/provisioning/datasources
+    configMap: grafana-datasources
+    readOnly: true
+  - name: ca-bundle
+    mountPath: /etc/grafana/certs
+    configMap: polaris-ca-bundle
+    readOnly: true
+
+dashboardProviders:
+  dashboardproviders.yaml:
+    apiVersion: 1
+    # Provisioned from JSON in this repo and read-only in the UI: change the JSON, not the dashboard.
+    providers:
+      - name: polaris
+        folder: Polaris
+        type: file
+        disableDeletion: true
+        allowUiUpdates: false
+        updateIntervalSeconds: 30
+        options:
+          path: /var/lib/grafana/dashboards/polaris
+          foldersFromFilesStructure: false
+dashboardsConfigMaps:
+  polaris: grafana-dashboards
+
+grafana.ini:
+  analytics:
+    reporting_enabled: false
+    check_for_updates: false
+    check_for_plugin_updates: false
+  server:
+    root_url: https://grafana.polaris.local/
+  auth:
+    disable_login_form: false
+  auth.generic_oauth:
+    enabled: true
+    name: Keycloak
+    allow_sign_up: true
+    client_id: grafana
+    scopes: openid email profile roles
+    auth_url: https://id.polaris.local/realms/master/protocol/openid-connect/auth
+    token_url: https://id.polaris.local/realms/master/protocol/openid-connect/token
+    api_url: https://id.polaris.local/realms/master/protocol/openid-connect/userinfo
+    tls_client_ca: /etc/grafana/certs/ca.crt
+    tls_skip_verify_insecure: false
+    use_pkce: true
+    # Role comes from the master realm `grafana` client roles only; master realm roles are ignored (the master `admin`
+    # realm role is the Keycloak superuser, not a Grafana grant). No fallback role and strict mode: a user without a
+    # grafana client role can't log in. `|| [] literal` because JMESPath contains() errors on a missing claim.
+    role_attribute_path: "contains(resource_access.grafana.roles || `[]`, 'admin') && 'Admin' || contains(resource_access.grafana.roles || `[]`, 'editor') && 'Editor' || contains(resource_access.grafana.roles || `[]`, 'viewer') && 'Viewer'"
+    role_attribute_strict: true
+    allow_assign_grafana_admin: true
+    auto_login: false

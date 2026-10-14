@@ -91,29 +91,54 @@ chart's appVersion) twice:
 
 | Release | Kind | Namespace | Configured by | Role |
 |:--|:--|:--|:--|:--|
-| `otel-collector` | Deployment + Service (OTLP gRPC `4317`, HTTP `4318`) | `polaris` | `platform/otel-collector/values.yaml` | Receives OTLP from the Gateway (and the apps from K8 on), adds Kubernetes attributes, redacts, exports |
-| `otel-agent` | DaemonSet, no ports | `observability` | `platform/otel-agent/values.yaml` | Tails the Gateway pod's stdout on the node and forwards the access log to `otel-collector` over OTLP |
+| `otel-collector` | Deployment + Service (OTLP gRPC `4317`, HTTP `4318`, Prometheus exporter `8889`, own metrics `8888`) | `otel` | `platform/otel-collector/values.yaml` | Receives OTLP from the Gateway (and the apps from K8 on), adds Kubernetes attributes, redacts, exports to Tempo, Loki and Prometheus |
+| `otel-agent` | DaemonSet, no ports | `otel` | `platform/otel-agent/values.yaml` | Tails the Gateway pod's stdout on the node and forwards the access log to `otel-collector` over OTLP |
 
 - **Pipeline.** Ported from `docker/telemetry/otel-collector-config.yaml`: `memory_limiter` first, redaction and the
   metric attribute allow-list before `batch`, bounded exporter queues. Added: the `k8s_attributes` processor (with a
   ClusterRole to read pods, namespaces and replicasets), so every span, metric and log carries `k8s.namespace.name`,
   `k8s.pod.name` and `k8s.deployment.name`. Gateway spans are renamed from NGINX Gateway Fabric's
   `ngf:polaris:polaris` to Compose's `nginx-gateway`. Every span and log record is printed by the `debug` exporter
-  (`kubectl -n polaris logs deploy/otel-collector`). The local Tempo, Loki and Prometheus exporters arrive with K12.
+  (`kubectl -n polaris logs deploy/otel-collector`), and sent to the local Tempo, Loki and Prometheus (next section).
 - **Gateway traces.** NGINX Gateway Fabric's data-plane config (`nginx.config.telemetry` in
   `platform/nginx-gateway-fabric/values.yaml`) exports spans to `otel-collector:4317`. `base/edge/tracing-policy.yaml`
   (an `ObservabilityPolicy`) turns tracing on per HTTPRoute, samples every request and propagates W3C `traceparent`.
   A route that isn't listed there isn't traced: add each new HTTPRoute to its `targetRefs`.
 - **Gateway access log.** nginx writes Compose's JSON access log (with `trace_id` and `span_id`) to stdout
   (`nginx.config.logging.accessLog`). The agent reads it from `/var/log/pods` through a read-only hostPath, which Pod
-  Security `restricted` forbids. That's why it runs in its own `observability` namespace (Pod Security `privileged`),
-  not in `polaris`.
-- **Grafana Cloud (D8).** Optional. Put the `GRAFANA_CLOUD_*` keys of `.env.template` in the untracked
-  `deploy/k8s/.env.local` (or point `K8S_ENV_FILE` at another env file) and re-run `make k8s-up`. `platform.sh` then
-  writes the three keys to the Secret `polaris/grafana-cloud` and layers `platform/otel-collector/grafana-cloud.values.yaml`
-  (Compose's `otlp_http/grafana_cloud` exporter and `basicauth/grafana_cloud` extension) on the Collector. Without
-  them, as in CI, the Secret is removed and the Collector exports to its debug exporter only. Values are read as
-  `KEY=value` lines, without quotes.
+  Security `restricted` forbids. That's why the `otel` namespace (Collector and agent, `platform/otel`) enforces Pod Security `privileged`, not
+  `polaris` or `observability`; its warn and audit levels stay `restricted`, so the Collector is still held to it.
+- **No Grafana Cloud (D8).** The Collector exports to the in-cluster stack below and to its `debug` exporter, never off
+  the cluster. `GRAFANA_CLOUD_*` in `.env.template` is for Compose only; `make k8s-up` ignores it and removes the
+  `grafana-cloud` Secret a cluster created by an earlier version may still hold.
+
+## Observability: Tempo, Loki, Prometheus and Grafana
+
+`make k8s-up` (step `platform-lgtm`, after `apply-secrets`) installs the local stack from the upstream charts, all in
+the `observability` namespace (`platform/observability`: Pod Security `restricted`, default-deny NetworkPolicies, the CA
+bundle for Grafana). The Gateway's `https-grafana` listener accepts routes from `polaris` only, so the HTTPRoute stays in
+`base/grafana` and reaches the Service through a ReferenceGrant. Each is a single instance
+on a persistent volume, configured from the Compose files under `docker/telemetry/`, so both environments share one
+source:
+
+| Release | Chart (pin in `versions.env`) | Service | Configured by | From Compose |
+|:--|:--|:--|:--|:--|
+| `tempo` | `grafana-community/tempo` | `tempo` 3200 (HTTP), 4317 (OTLP gRPC) | `platform/tempo/values.yaml` | `tempo/tempo.yml`: 3-day retention, ingest limits, span-metrics and service-graphs remote-written to Prometheus |
+| `loki` | `grafana-community/loki` | `loki` 3100 | `platform/loki/values.yaml` | `loki/loki.yml`: 7-day retention, ingest caps, only 3 index labels |
+| `prometheus` | `prometheus-community/prometheus` | `prometheus` 9090 | `platform/prometheus/values.yaml` + ConfigMap `prometheus-rules` | `prometheus/prometheus.yml` scrape jobs, 15 days or 5GB, and `prometheus/rules/*.yml` as they are (`make test-rules`) |
+| `grafana` | `grafana-community/grafana` | `grafana` 3000, `https://grafana.polaris.local` | `platform/grafana/values.yaml`, ConfigMaps `grafana-datasources` and `grafana-dashboards`, `base/grafana` (HTTPRoute) | the provisioning datasources and dashboards unchanged; Keycloak master-realm SSO with the same role mapping |
+
+- **Signals.** Traces: Collector → Tempo (OTLP/gRPC). Logs: Collector → Loki's OTLP endpoint. Metrics: Prometheus scrapes
+  the Collector's exporter (`:8889`) and the Collector, Tempo, Loki and Grafana themselves. Datasource UIDs and links are
+  Compose's, so a metric exemplar opens its trace and a trace opens its logs.
+- **Login.** Grafana SSO signs in staff through Keycloak's master realm (client `grafana`, PKCE; a user needs a `grafana`
+  client role). The local admin account is Secret `observability/grafana-admin`: user `admin` (or `GRAFANA_ADMIN_USER` in the env file)
+  and the realm placeholder `DEFAULT_PASSWORD` from `keycloak-realm-placeholders`
+  (`kubectl -n observability get secret grafana-admin -o jsonpath='{.data.admin-password}' | base64 -d`).
+- **Changing a config.** Edit the file under `docker/telemetry` and re-run `make k8s-up`: the ConfigMaps are re-applied and
+  Prometheus and Grafana roll when their config changed.
+- **Dashboards.** Panels built on Compose's nginx `stub_status` metrics are empty here: NGINX Gateway Fabric has no
+  `stub_status` (its Prometheus metrics on `:9113` aren't scraped yet), and its access log has no `route`/`sse` fields.
 
 ## Data stores: PostgreSQL and Redis
 
@@ -382,7 +407,7 @@ on both ends (the caller's egress, the callee's ingress, on the callee's contain
 | Policy | Ingress from | Egress to |
 |:--|:--|:--|
 | `gateway` (NGF data plane) | anywhere, 80/443 (north–south entry, NodePort and in-cluster `*.polaris.local`) | polaris and Swagger UI 8080, the assistant 8081, Keycloak 8080, the Collector 4317, the NGF control plane (`nginx-gateway`) 8443 |
-| `polaris` | the Gateway, the assistant, the emulator: 8080 | polaris-db 5432, Redis 6379, Kafka 9092, the Collector 4318, the Gateway 443 (JWKS) |
+| `polaris` | the Gateway, the assistant, the emulator: 8080 | polaris-db 5432, Redis 6379, Kafka 9092, the Collector (`otel`) 4318, the Gateway 443 (JWKS) |
 | `polaris-assistant` | the Gateway: 8081 | polaris 8080, polaris-db 5432, Redis 6379, the Collector 4318, the Gateway 443, public HTTPS (Gemini, TypeSafe) |
 | `polaris-fulfilment-emulator` | nothing | Kafka 9092, polaris 8080, the Gateway 443 (token), the Collector 4318 |
 | `swagger-ui` | the Gateway: 8080 | nothing |
@@ -390,7 +415,11 @@ on both ends (the caller's egress, the callee's ingress, on the callee's contain
 | `cnpg-pods`, `polaris-db`, `keycloak-db` | the apps (polaris-db: polaris, assistant; keycloak-db: Keycloak, import Job) 5432; own instances 5432/8000; the CNPG operator 8000 | own instances; the API server; the object store's S3 port 8333 |
 | `redis` | polaris, the assistant: 6379 | nothing |
 | `kafka` | polaris, the emulator: 9092; the nodes: 9090-9092; the Strimzi operator: 9090, 9091, 8443 | the nodes: 9090-9092 |
-| `otel-collector` | the apps 4318; Keycloak, the Gateway, the log agent (`observability`) 4317 | the API server; public HTTPS (Grafana Cloud) |
+| `otel-collector` (`otel`) | the apps 4318; Keycloak, the Gateway 4317, the log agent 4317; Prometheus (`observability`) 8888, 8889 | the API server; Tempo (`observability`) 4317; Loki 3100 |
+| `tempo` | the Collector 4317; Grafana, Prometheus 3200 | Prometheus 9090 (remote write) |
+| `loki` | the Collector, Grafana, Prometheus: 3100 | nothing |
+| `prometheus` | Grafana, Tempo: 9090 | the Collector 8888, 8889; Tempo 3200; Loki 3100; Grafana 3000 |
+| `grafana` | the Gateway, Prometheus: 3000 | Prometheus 9090, Loki 3100, Tempo 3200, the Gateway 443 (SSO) |
 
 The API server and the external APIs have no pods to select: the API server is TCP 6443 on any address (a cloud overlay
 narrows it to the control plane's CIDR), an external API is TCP 443 on any public address (NetworkPolicy has no host
@@ -429,8 +458,8 @@ policy lets them reach any pod of the namespace (removed on exit). On top of tha
 - A probe whose own egress is open (`polaris.local/smoke-probe=egress-only`) but that no ingress rule admits resolves
   `polaris-db-rw`, `kafka-kafka-bootstrap` and the object store but can't connect to them (S3 8333, filer 8888);
   admitted by the fixture, it connects to polaris-db and Kafka.
-- A dry run of the namespace's `restricted` label reports no violating pod (in `polaris` and `object-store`), while the
-  same dry run flags the privileged log agent in `observability`.
+- A dry run of the namespace's `restricted` label reports no violating pod (in `polaris`, `observability` and `object-store`), while the
+  same dry run flags the privileged log agent in `otel`.
 - Both HPAs target their Deployment, 2-4 replicas on CPU, and read their pods' CPU from metrics-server.
 - Both Clusters report `ContinuousArchiving` and have a completed scheduled backup. A row written to polaris-db is in
   an on-demand backup, and a new Cluster recovered from the object store contains it.

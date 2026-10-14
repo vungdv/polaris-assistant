@@ -27,11 +27,20 @@ export KUBECONFIG="$K8S_KUBECONFIG"
   GATEWAY_SERVICE="$GATEWAY_NAME-nginx"
   CA_BUNDLE=polaris-ca-bundle
   EDGE_HOSTS=(polaris.local id.polaris.local grafana.polaris.local)
-  # Observability (K4): the Collector (Deployment and Service) in the app namespace, the log agent (DaemonSet) in its
-  # own namespace (platform/otel-agent).
+  # Telemetry (K4): the Collector (Deployment and Service) and the log agent (DaemonSet) in the `otel` namespace
+  # (platform/otel, platform/otel-collector, platform/otel-agent). The namespace is Pod Security `privileged` for the agent.
   OTEL_COLLECTOR=otel-collector
   OTEL_AGENT=otel-agent
-  OTEL_AGENT_NAMESPACE=observability
+  OTEL_NAMESPACE=otel
+  # Local LGTM stack (K12): Tempo, Loki, Prometheus and Grafana, one Helm release and one same-named Service each, in the
+  # `observability` namespace (platform/observability, platform/tempo, platform/loki, platform/prometheus,
+  # platform/grafana). Grafana's admin account is GRAFANA_ADMIN_SECRET; its route is in base/grafana.
+  OBSERVABILITY_NAMESPACE=observability
+  TEMPO_RELEASE=tempo
+  LOKI_RELEASE=loki
+  PROMETHEUS_RELEASE=prometheus
+  GRAFANA_RELEASE=grafana
+  GRAFANA_ADMIN_SECRET=grafana-admin
   # Data stores (K5): the CloudNativePG operator in its own namespace (platform/cloudnative-pg), one PostgreSQL Cluster
   # per owner and Redis in the app namespace (base/data, base/redis).
   CNPG_RELEASE=cloudnative-pg
@@ -85,9 +94,9 @@ export KUBECONFIG="$K8S_KUBECONFIG"
 }
 # kafka_pod <node id>: the pod name of a Kafka node.
 kafka_pod() { printf '%s-%s-%s' "$KAFKA_CLUSTER" "$KAFKA_NODE_POOL" "$1"; }
-# Untracked env file with the keys of .env.template (TR-K3): the source of the cluster's Secrets (GRAFANA_CLOUD_* for
-# K4, DEFAULT_PASSWORD and POLARIS_FULFILMENT_EMULATOR_SECRET for K7, the assistant's keys for K9). Optional: a missing
-# key keeps each component's documented default.
+# Untracked env file with the keys of .env.template (TR-K3): the source of the cluster's Secrets (DEFAULT_PASSWORD and
+# POLARIS_FULFILMENT_EMULATOR_SECRET for K7, the assistant's keys for K9). Optional: a missing key keeps each component's
+# documented default.
 K8S_ENV_FILE="${K8S_ENV_FILE:-$K8S_DIR/.env.local}"
 # env_value <key>: the value of `<key>=<value>` in the untracked env file (the last one wins), or nothing. The file is
 # read as data, never sourced.

@@ -1,0 +1,164 @@
+# NetworkPolicies of the `otel` namespace (K4, K11, TR-K10): default deny in both directions, DNS, and exactly the flows
+# of the telemetry path, each allowed on both of its ends (the other ends are in base/network-policies and
+# platform/observability):
+#   apps, Keycloak, the Gateway -> Collector 4318 / 4317    log agent -> Collector 4317
+#   Prometheus -> Collector 8888, 8889                      Collector -> Tempo 4317, Loki 3100, the API server
+# The log agent has no ingress, no API token and talks to the Collector only.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  labels:
+    app.kubernetes.io/part-of: polaris
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+# DNS for every pod: cluster DNS (CoreDNS in kube-system).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dns
+  labels:
+    app.kubernetes.io/part-of: polaris
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+---
+# The OpenTelemetry Collector (K4). Receives OTLP/HTTP (4318) from the three apps, OTLP/gRPC (4317) from Keycloak, the
+# Gateway and the log agent; reads pod metadata from the Kubernetes API (k8s_attributes); and exports to the local Tempo
+# (OTLP/gRPC) and Loki (OTLP/HTTP), while Prometheus scrapes its metrics (K12, D8).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: otel-collector
+  labels:
+    app.kubernetes.io/part-of: polaris
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: otel-collector
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: polaris
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: polaris
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: polaris
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: polaris-assistant
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: polaris
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: polaris-fulfilment-emulator
+      ports:
+        - protocol: TCP
+          port: 4318
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: polaris
+          podSelector:
+            matchLabels:
+              app: keycloak
+              app.kubernetes.io/component: server
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: polaris
+          podSelector:
+            matchLabels:
+              gateway.networking.k8s.io/gateway-name: polaris
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: otel-agent
+      ports:
+        - protocol: TCP
+          port: 4317
+    # Prometheus scrapes the exporter of application metrics (8889) and the Collector's own metrics (8888).
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: prometheus
+      ports:
+        - protocol: TCP
+          port: 8888
+        - protocol: TCP
+          port: 8889
+  egress:
+    # The Kubernetes API (see base/network-policies/kustomization.yaml).
+    - ports:
+        - protocol: TCP
+          port: 6443
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: tempo
+      ports:
+        - protocol: TCP
+          port: 4317
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: loki
+      ports:
+        - protocol: TCP
+          port: 3100
+---
+# The log agent (K4) sends the Gateway's access log to the Collector and nothing else.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: otel-agent
+  labels:
+    app.kubernetes.io/part-of: polaris
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: otel-agent
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress: []
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: otel-collector
+      ports:
+        - protocol: TCP
+          port: 4317

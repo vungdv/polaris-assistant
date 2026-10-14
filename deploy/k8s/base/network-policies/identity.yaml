@@ -35,7 +35,10 @@ spec:
         - protocol: TCP
           port: 5432
     - to:
-        - podSelector:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: otel
+          podSelector:
             matchLabels:
               app.kubernetes.io/instance: otel-collector
       ports:

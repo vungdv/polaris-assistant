@@ -53,7 +53,7 @@ spec:
   # Traces to the in-cluster Collector (TR-K9), with Compose's sampler.
   tracing:
     enabled: true
-    endpoint: http://otel-collector.polaris.svc.cluster.local:4317
+    endpoint: http://otel-collector.otel.svc.cluster.local:4317
     protocol: grpc
     serviceName: keycloak
     samplerType: traceidratio

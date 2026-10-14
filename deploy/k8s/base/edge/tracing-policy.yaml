@@ -31,6 +31,9 @@ spec:
     - group: gateway.networking.k8s.io
       kind: HTTPRoute
       name: swagger-ui
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: grafana
   tracing:
     strategy: ratio
     ratio: 100

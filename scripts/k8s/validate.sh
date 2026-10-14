@@ -54,11 +54,8 @@ render_chart() {
 render_chart "$CERT_MANAGER_CHART" "$CERT_MANAGER_VERSION" "$K8S_DIR/platform/cert-manager/values.yaml"
 render_chart "$TRUST_MANAGER_CHART" "$TRUST_MANAGER_VERSION" "$K8S_DIR/platform/trust-manager/values.yaml"
 render_chart "$NGF_CHART" "$NGF_VERSION" "$K8S_DIR/platform/nginx-gateway-fabric/values.yaml"
-# The Collector with and without the Grafana Cloud layer (platform.sh adds it only when credentials exist), and the
-# log agent.
+# The Collector and the log agent.
 render_chart "$OTEL_COLLECTOR_CHART" "$OTEL_COLLECTOR_VERSION" "$K8S_DIR/platform/otel-collector/values.yaml"
-render_chart "$OTEL_COLLECTOR_CHART" "$OTEL_COLLECTOR_VERSION" "$K8S_DIR/platform/otel-collector/values.yaml" \
-  "$K8S_DIR/platform/otel-collector/grafana-cloud.values.yaml"
 render_chart "$OTEL_COLLECTOR_CHART" "$OTEL_COLLECTOR_VERSION" "$K8S_DIR/platform/otel-agent/values.yaml"
 render_chart "$CNPG_CHART" "$CNPG_VERSION" "$K8S_DIR/platform/cloudnative-pg/values.yaml"
 render_chart "$STRIMZI_CHART" "$STRIMZI_VERSION" "$K8S_DIR/platform/strimzi/values.yaml"
@@ -67,3 +64,8 @@ render_chart --repo "$METRICS_SERVER_REPO" "$METRICS_SERVER_CHART" "$METRICS_SER
   "$K8S_DIR/platform/metrics-server/values.yaml"
 render_chart "$BARMAN_CLOUD_CHART" "$BARMAN_CLOUD_VERSION" "$K8S_DIR/platform/barman-cloud/values.yaml"
 render_chart --repo "$SEAWEEDFS_REPO" "$SEAWEEDFS_CHART" "$SEAWEEDFS_VERSION" "$K8S_DIR/platform/object-store/values.yaml"
+# K12: the local LGTM stack.
+render_chart --repo "$PROMETHEUS_REPO" "$PROMETHEUS_CHART" "$PROMETHEUS_VERSION" "$K8S_DIR/platform/prometheus/values.yaml"
+render_chart --repo "$GRAFANA_COMMUNITY_REPO" "$LOKI_CHART" "$LOKI_VERSION" "$K8S_DIR/platform/loki/values.yaml"
+render_chart --repo "$GRAFANA_COMMUNITY_REPO" "$TEMPO_CHART" "$TEMPO_VERSION" "$K8S_DIR/platform/tempo/values.yaml"
+render_chart --repo "$GRAFANA_COMMUNITY_REPO" "$GRAFANA_CHART" "$GRAFANA_VERSION" "$K8S_DIR/platform/grafana/values.yaml"

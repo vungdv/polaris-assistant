@@ -4,11 +4,11 @@
 # pods by the labels its owner (Kustomize base, Helm chart or operator) sets.
 #
 # Outside the namespace, only the ends that need a rule here are named: CoreDNS (kube-system), the operators that
-# manage pods in this namespace (cnpg-system, strimzi), the Gateway control plane (nginx-gateway), the log agent
-# (observability), the object store (object-store), the Kubernetes API server and the external HTTPS APIs. The
+# manage pods in this namespace (cnpg-system, strimzi), the Gateway control plane (nginx-gateway), the Collector
+# (otel), Grafana (observability), the object store (object-store), the Kubernetes API server and the external HTTPS APIs. The
 # operators' own namespaces carry no policies.
 #
-# The API server and the external APIs (Gemini, TypeSafe, Grafana Cloud) have no pods to select. NetworkPolicy can
+# The API server and the external APIs (Gemini, TypeSafe) have no pods to select. NetworkPolicy can
 # name them only by address, so:
 #   - the API server is TCP 6443 on any address (kind's and kubeadm's port). Its endpoint is a per-cluster node
 #     address; a cloud overlay narrows the rule to the control plane's CIDR and port.
@@ -29,4 +29,3 @@ resources:
   - identity.yaml
   - data.yaml
   - kafka.yaml
-  - observability.yaml

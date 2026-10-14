@@ -1,0 +1,15 @@
+# The telemetry namespace (K4): the Collector and the node-level log agent. The log agent DaemonSet reads the node's
+# /var/log/pods through a read-only hostPath, which Pod Security `restricted` and `baseline` both forbid, so the
+# namespace enforces `privileged` (TR-K10, accepted exception). The Collector in it still meets `restricted`: warn and
+# audit use that level, so a violation by anything but the agent surfaces at apply time and in the audit log.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: otel
+  labels:
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/warn-version: latest
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/audit-version: latest

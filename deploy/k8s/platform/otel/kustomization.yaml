@@ -1,0 +1,8 @@
+# The telemetry namespace and its NetworkPolicies (K4). Applied by scripts/k8s/platform/platform-observability.sh before
+# the Collector's and the log agent's Helm releases; validated by scripts/k8s/validate.sh.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: otel
+resources:
+  - namespace.yaml
+  - network-policies.yaml

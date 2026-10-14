@@ -1,5 +1,5 @@
 # Helm values for the OpenTelemetry Collector (K4, TR-K9, D8), installed by scripts/k8s/platform.sh from the upstream
-# chart ($OTEL_COLLECTOR_CHART at $OTEL_COLLECTOR_VERSION, deploy/k8s/versions.env) into the `polaris` namespace as the
+# chart ($OTEL_COLLECTOR_CHART at $OTEL_COLLECTOR_VERSION, deploy/k8s/versions.env) into the `otel` namespace as the
 # Deployment and Service `otel-collector` (OTLP gRPC :4317, OTLP HTTP :4318). The contrib image tag is the chart's
 # appVersion, so the chart pin also pins the image.
 #
@@ -13,12 +13,11 @@
 #   - The nginx syslog receiver is replaced by the log agent (platform/otel-agent), which tails the Gateway pod's stdout
 #     and forwards the parsed JSON access log here over OTLP; it lands in the `logs` pipeline and is redacted there.
 #     The nginx stub_status receiver has no NGINX Gateway Fabric equivalent and is not ported.
-#   - The local Tempo, Loki and Prometheus exporters move to K12 (D8) with those backends.
-#   - The `debug` exporter writes every span and log record (resource attributes included) to the Collector's stdout,
-#     which the smoke test reads. Metrics are only counted there.
-#   - Grafana Cloud: the otlp_http/grafana_cloud exporter and its basicauth extension are kept as in Compose, in
-#     grafana-cloud.values.yaml. platform.sh layers that file on top of this one only when the env file has the
-#     GRAFANA_CLOUD_* credentials, so a cluster without them (CI) runs the same pipeline with the debug exporter only.
+#   - Export goes to the local LGTM stack in the `observability` namespace (K12, D8; platform/tempo, platform/loki,
+#     platform/prometheus), by the Compose exporters: traces to Tempo over OTLP/gRPC, logs to Loki's OTLP endpoint, and
+#     metrics on the Prometheus exporter (:8889), which Prometheus scrapes. There is no Grafana Cloud export.
+#   - The `debug` exporter also writes every span and log record (resource attributes included) to the Collector's
+#     stdout, which the smoke test reads. Metrics are only counted there.
 # Every pipeline keeps the Compose hardening: memory_limiter first, redaction before batch and export, bounded
 # exporter queues.
 
@@ -50,11 +49,19 @@ resources:
   limits:
     memory: 512Mi
 
-# OTLP only: the chart's Jaeger and Zipkin ports are off.
+# OTLP only: the chart's Jaeger and Zipkin ports are off. Prometheus scrapes the exporter of application metrics
+# (prom-exporter) and the Collector's own metrics (metrics), both on the Service.
 ports:
   otlp:
     enabled: true
   otlp-http:
+    enabled: true
+  prom-exporter:
+    enabled: true
+    containerPort: 8889
+    servicePort: 8889
+    protocol: TCP
+  metrics:
     enabled: true
   jaeger-compact:
     enabled: false
@@ -184,18 +191,51 @@ config:
     debug: {}
     debug/detailed:
       verbosity: detailed
+    # Bounded queues and retries as in Compose: when a backend is down the queue fills, then data is dropped; the apps
+    # are never back-pressured for long.
+    otlp_grpc/tempo:
+      endpoint: tempo.observability.svc.cluster.local:4317
+      tls:
+        insecure: true
+      timeout: 10s
+      retry_on_failure:
+        enabled: true
+        initial_interval: 5s
+        max_interval: 30s
+        max_elapsed_time: 120s
+      sending_queue:
+        enabled: true
+        num_consumers: 4
+        queue_size: 1000
+    otlp_http/logs:
+      endpoint: http://loki.observability.svc.cluster.local:3100/otlp
+      tls:
+        insecure: true
+      timeout: 10s
+      retry_on_failure:
+        enabled: true
+        initial_interval: 5s
+        max_interval: 30s
+        max_elapsed_time: 120s
+      sending_queue:
+        enabled: true
+        num_consumers: 4
+        queue_size: 1000
+    # Pull-based: Prometheus scrapes it, so no queue applies.
+    prometheus:
+      endpoint: ${env:MY_POD_IP}:8889
 
   service:
     pipelines:
       traces:
         receivers: [otlp]
         processors: [memory_limiter, k8s_attributes, transform/nginx_resource, transform/nginx_spans, redaction/secrets, transform/redact_traces, batch]
-        exporters: [debug/detailed]
+        exporters: [debug/detailed, otlp_grpc/tempo]
       metrics:
         receivers: [otlp]
         processors: [memory_limiter, k8s_attributes, redaction/secrets, transform/metric_allowlist, batch]
-        exporters: [debug]
+        exporters: [debug, prometheus]
       logs:
         receivers: [otlp]
         processors: [memory_limiter, k8s_attributes, redaction/secrets, transform/redact_logs, batch]
-        exporters: [debug/detailed]
+        exporters: [debug/detailed, otlp_http/logs]

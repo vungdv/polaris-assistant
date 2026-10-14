@@ -21,8 +21,8 @@ data:
   POLARIS_CORE_API_BASE_URL: http://polaris:8080
   POLARIS_FULFILMENT_TOKEN_URI: https://id.polaris.local/realms/polaris/protocol/openid-connect/token
   JAVA_TOOL_OPTIONS: -Djavax.net.ssl.trustStore=/etc/polaris-trust/truststore.jks -XX:MaxRAMPercentage=70
-  MANAGEMENT_OTLP_METRICS_EXPORT_URL: http://otel-collector:4318/v1/metrics
-  MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT: http://otel-collector:4318/v1/traces
-  MANAGEMENT_OPENTELEMETRY_LOGGING_EXPORT_OTLP_ENDPOINT: http://otel-collector:4318/v1/logs
+  MANAGEMENT_OTLP_METRICS_EXPORT_URL: http://otel-collector.otel.svc.cluster.local:4318/v1/metrics
+  MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT: http://otel-collector.otel.svc.cluster.local:4318/v1/traces
+  MANAGEMENT_OPENTELEMETRY_LOGGING_EXPORT_OTLP_ENDPOINT: http://otel-collector.otel.svc.cluster.local:4318/v1/logs
   # The emulator continues the trace each order event carries (traceparent in its Kafka headers).
   MANAGEMENT_TRACING_SAMPLING_PROBABILITY: "1.0"

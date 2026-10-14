@@ -1,0 +1,6 @@
+# Grafana's route (K12). Grafana itself is installed from its upstream chart (platform/grafana).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: polaris
+resources:
+  - httproute.yaml

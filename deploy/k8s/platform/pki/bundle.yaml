@@ -11,7 +11,7 @@ metadata:
   name: polaris-ca-bundle
 spec:
   sources:
-    # Public roots, for calls to external HTTPS APIs (Gemini, TypeSafe, Grafana Cloud).
+    # Public roots, for calls to external HTTPS APIs (Gemini, TypeSafe).
     - useDefaultCAs: true
     - secret:
         name: polaris-root-ca

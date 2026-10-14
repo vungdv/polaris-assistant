@@ -1,7 +1,7 @@
 # The Gateway's data plane (K3): the NGINX Gateway Fabric pods of the Gateway `polaris`. North-south entry point, so it
 # accepts HTTP and HTTPS from anywhere: browsers and k6 through the NodePort, and the in-cluster clients of
 # https://polaris.local and https://id.polaris.local (the apps' JWKS and token calls, CoreDNS rewrite). It routes to
-# polaris, the assistant, Swagger UI and Keycloak (the only path to Keycloak's 8080), exports its spans to the Collector
+# polaris, the assistant, Swagger UI, Grafana and Keycloak (the only path to Keycloak's 8080), exports its spans to the Collector
 # (OTLP/gRPC), and its NGINX agent takes its configuration from the control plane in nginx-gateway (gRPC).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -49,7 +49,20 @@ spec:
         - protocol: TCP
           port: 8080
     - to:
-        - podSelector:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: grafana
+      ports:
+        - protocol: TCP
+          port: 3000
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: otel
+          podSelector:
             matchLabels:
               app.kubernetes.io/instance: otel-collector
       ports:

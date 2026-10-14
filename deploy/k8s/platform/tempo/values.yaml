@@ -1,0 +1,71 @@
+# Helm values for Tempo (K12, D8), installed by scripts/k8s/platform/platform-lgtm.sh from the upstream chart
+# ($TEMPO_CHART from $GRAFANA_COMMUNITY_REPO at $TEMPO_VERSION, deploy/k8s/versions.env) into the `observability` namespace as
+# the StatefulSet and Service `tempo` (HTTP :3200, OTLP gRPC :4317, OTLP HTTP :4318), the name the Collector's trace
+# exporter and Grafana's datasource use.
+#
+# Single binary on one volume (local storage), as in Compose; the configuration is docker/telemetry/tempo/tempo.yml: OTLP
+# receivers, 3-day retention, the ingest limits, and the metrics generator (span-metrics with the same dimensions, and
+# service-graphs) remote-writing to `prometheus`. Pod Security `restricted`: the chart's pod context is non-root; the
+# container context below drops every capability.
+
+fullnameOverride: tempo
+
+tempo:
+  reportingEnabled: false
+  retention: 72h
+  # Only OTLP: the chart's Jaeger receivers are off.
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:4317
+        http:
+          endpoint: 0.0.0.0:4318
+  metricsGenerator:
+    enabled: true
+    remoteWriteUrl: http://prometheus:9090/api/v1/write
+    storage:
+      path: /var/tempo/generator/wal
+      remote_write:
+        - url: http://prometheus:9090/api/v1/write
+          send_exemplars: true
+    registry:
+      external_labels:
+        source: tempo
+    processor:
+      span_metrics:
+        # error + mcp.category: MCP tool calls set error=true on isError results (not only on exceptions), and
+        # mcp.category splits catalog from order tools on the Polaris Product Catalog & Orders dashboard.
+        dimensions: [http.request.method, http.response.status_code, http.route, polaris.sse, error, mcp.category]
+        enable_target_info: true
+      service_graphs:
+        dimensions: []
+  overrides:
+    defaults:
+      ingestion:
+        rate_limit_bytes: 15000000
+        burst_size_bytes: 20000000
+      global:
+        max_bytes_per_trace: 5000000
+      metrics_generator:
+        processors: [service-graphs, span-metrics]
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop: ["ALL"]
+    seccompProfile:
+      type: RuntimeDefault
+  resources:
+    requests:
+      cpu: 50m
+      memory: 256Mi
+    limits:
+      memory: 1Gi
+
+serviceAccount:
+  automountServiceAccountToken: false
+
+persistence:
+  enabled: true
+  size: 10Gi

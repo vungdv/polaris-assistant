@@ -1,0 +1,9 @@
+# The observability stack's namespace, its NetworkPolicies and the route grant (K12). Applied by
+# scripts/k8s/platform/platform-lgtm.sh before the Helm releases; validated by scripts/k8s/validate.sh.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: observability
+resources:
+  - namespace.yaml
+  - network-policies.yaml
+  - referencegrant.yaml

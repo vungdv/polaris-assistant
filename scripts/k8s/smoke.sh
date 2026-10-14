@@ -48,11 +48,15 @@ fi
 # polaris.local/smoke-probe=true reach every pod of the namespace (the callee's ingress) and lets them, and pods
 # labelled polaris.local/smoke-probe=egress-only, send anywhere (the probe's own egress). It is removed on exit. An
 # `egress-only` probe is outside the allow list on the callee's side only, so the K11 checks with it show that the
-# callees' ingress rules lock it out. The fixture is never part of the deployed manifests.
+# callees' ingress rules lock it out. The `otel` and `observability` namespaces get the ingress half, so the probes can
+# read the telemetry backends. The fixture is never part of the deployed manifests.
 SMOKE_PROBE_KEY=polaris.local/smoke-probe
 remove_smoke_policy() {
   kctl -n "$K8S_NAMESPACE" delete networkpolicy smoke-probes smoke-probes-egress --ignore-not-found --wait=false \
     >/dev/null 2>&1 || true
+  for ns in "$OTEL_NAMESPACE" "$OBSERVABILITY_NAMESPACE"; do
+    kctl -n "$ns" delete networkpolicy smoke-probes --ignore-not-found --wait=false >/dev/null 2>&1 || true
+  done
 }
 trap remove_smoke_policy EXIT
 kctl -n "$K8S_NAMESPACE" apply -f - >/dev/null <<EOF
@@ -89,6 +93,26 @@ spec:
   egress:
     - {}
 EOF
+for ns in "$OTEL_NAMESPACE" "$OBSERVABILITY_NAMESPACE"; do
+  kctl -n "$ns" apply -f - >/dev/null <<EOF
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: smoke-probes
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: $K8S_NAMESPACE
+          podSelector:
+            matchLabels:
+              $SMOKE_PROBE_KEY: "true"
+EOF
+done
 # probe_label: the value of $SMOKE_PROBE_KEY on the probe pods below (run_probe); "egress-only" leaves a probe outside
 # the callees' allow list.
 probe_label=true
@@ -197,6 +221,8 @@ if kctl -n "$K8S_NAMESPACE" wait --for=jsonpath='{.status.phase}'=Succeeded "pod
     fi
     expected=404
     [ "$host" != polaris.local ] || expected=401
+    # grafana.polaris.local routes every path to Grafana (K12), which sends an anonymous request to its login page.
+    [ "$host" != grafana.polaris.local ] || expected=302
     if [ "$code" = "$expected" ]; then
       pass "https://$host certificate verifies against $CA_BUNDLE and an unrouted path returns $expected"
     else
@@ -217,12 +243,13 @@ fi
 
 # --- K4: observability pipeline -------------------------------------------------------------------------------
 quiet() { "$@" >/dev/null 2>&1; }
-check "deployment $K8S_NAMESPACE/$OTEL_COLLECTOR is available" \
-  quiet kctl -n "$K8S_NAMESPACE" rollout status "deployment/$OTEL_COLLECTOR" --timeout=60s
-check "daemonset $OTEL_AGENT_NAMESPACE/$OTEL_AGENT is ready" \
-  quiet kctl -n "$OTEL_AGENT_NAMESPACE" rollout status "daemonset/$OTEL_AGENT" --timeout=60s
-check "Service $OTEL_COLLECTOR exposes OTLP gRPC 4317 and OTLP HTTP 4318" [ \
-  "$(kctl -n "$K8S_NAMESPACE" get service "$OTEL_COLLECTOR" -o jsonpath='{.spec.ports[*].port}' 2>/dev/null)" = "4317 4318" ]
+check "deployment $OTEL_NAMESPACE/$OTEL_COLLECTOR is available" \
+  quiet kctl -n "$OTEL_NAMESPACE" rollout status "deployment/$OTEL_COLLECTOR" --timeout=60s
+check "daemonset $OTEL_NAMESPACE/$OTEL_AGENT is ready" \
+  quiet kctl -n "$OTEL_NAMESPACE" rollout status "daemonset/$OTEL_AGENT" --timeout=60s
+check "Service $OTEL_COLLECTOR exposes OTLP gRPC 4317, OTLP HTTP 4318, its metrics 8888 and the Prometheus exporter 8889" [ \
+  "$(kctl -n "$OTEL_NAMESPACE" get service "$OTEL_COLLECTOR" -o jsonpath='{.spec.ports[*].port}' 2>/dev/null)" = \
+  "8888 4317 4318 8889" ]
 check "ObservabilityPolicy edge-tracing is accepted" is_true "$(kctl -n "$K8S_NAMESPACE" get observabilitypolicy \
   edge-tracing -o jsonpath="{.status.ancestors[0].conditions[?(@.type=='Accepted')].status}" 2>/dev/null)"
 
@@ -235,7 +262,7 @@ check "ObservabilityPolicy edge-tracing is accepted" is_true "$(kctl -n "$K8S_NA
 # blocks of one kind that contain the trace ID. nginx exports spans every 5s and both hops batch for 2s, so the checks
 # poll the Collector's log for up to OTEL_SMOKE_TIMEOUT seconds.
 telemetry_block() { # <ResourceSpans|ResourceLog> [<trace id>, default: $trace_id]
-  kctl -n "$K8S_NAMESPACE" logs "deployment/$OTEL_COLLECTOR" --since=15m 2>/dev/null |
+  kctl -n "$OTEL_NAMESPACE" logs "deployment/$OTEL_COLLECTOR" --since=15m 2>/dev/null |
     awk -v kind="$1" -v tid="${2:-$trace_id}" '
       function flush() { if (block ~ tid) printf "%s", block; block = "" }
       /Resource(Spans|Log) #[0-9]+$/ { flush(); keep = ($0 ~ kind " #") }
@@ -663,7 +690,7 @@ check "OIDC discovery from the host (127.0.0.1:${host_port:-443}) names the issu
 deadline=$((SECONDS + ${OTEL_SMOKE_TIMEOUT:-90}))
 kc_spans=""
 while [ "$SECONDS" -lt "$deadline" ]; do
-  kc_spans="$(kctl -n "$K8S_NAMESPACE" logs "deployment/$OTEL_COLLECTOR" --since=5m 2>/dev/null |
+  kc_spans="$(kctl -n "$OTEL_NAMESPACE" logs "deployment/$OTEL_COLLECTOR" --since=5m 2>/dev/null |
     grep -c "service.name: Str(keycloak)" || true)"
   [ "${kc_spans:-0}" -gt 0 ] && break
   sleep 3
@@ -1408,10 +1435,12 @@ psa_out="$(psa_dry_run "$K8S_NAMESPACE")"
 no_violation() { [[ "$psa_out" == *"labeled"* && "$psa_out" != *"violate"* ]]; }
 check "every one of the $pods_checked pods in $K8S_NAMESPACE passes Pod Security restricted" no_violation
 [[ "$psa_out" != *"violate"* ]] || log "Pod Security warnings:"$'\n'"$psa_out"
-check "the same evaluation flags the privileged otel-agent in $OTEL_AGENT_NAMESPACE (control)" \
-  grep -q "violate" <<<"$(psa_dry_run "$OTEL_AGENT_NAMESPACE")"
+check "the same evaluation flags the privileged otel-agent in $OTEL_NAMESPACE (control)" \
+  grep -q "violate" <<<"$(psa_dry_run "$OTEL_NAMESPACE")"
 psa_out="$(psa_dry_run "$OBJECT_STORE_NAMESPACE")"
 check "every pod in $OBJECT_STORE_NAMESPACE (the object store) passes Pod Security restricted" no_violation
+psa_out="$(psa_dry_run "$OBSERVABILITY_NAMESPACE")"
+check "every pod in $OBSERVABILITY_NAMESPACE (Tempo, Loki, Prometheus, Grafana) passes Pod Security restricted" no_violation
 
 # Autoscaling (TR-K5): an HPA per replicated app, 2 to 4 replicas on CPU, reading the pods' CPU from metrics-server.
 # ScalingActive turns True once the HPA has computed a utilization from the resource metrics API.
@@ -1598,6 +1627,75 @@ else
     fail "the k6 pod for the drain did not start: $(kctl -n "$K8S_NAMESPACE" describe pod k11-drain 2>&1 | tail -5)"
   fi
 fi
+
+# --- K12: local LGTM stack (Tempo, Loki, Prometheus, Grafana) -------------------------------------------------
+# The Collector exports to the in-cluster backends only (D8, no Grafana Cloud). A probe sends one request with a fresh
+# traceparent through the Gateway (a traced route, as in K4) and then reads the signals back through the backends' own
+# HTTP APIs, polling while the pipeline flushes (nginx exports spans every 5s, the batch processors hold 2s, and Tempo's
+# metrics generator remote-writes every 15s):
+#   tempo       the trace by ID, with the Gateway's span (service.name nginx-gateway)
+#   loki        the Gateway's access log line of that trace, found by its trace_id (structured metadata)
+#   prometheus  every scrape target is up, the SLO rule groups are loaded, and the span-metrics Tempo generates exist
+#   grafana     healthy, with the Compose datasources and dashboards provisioned, and SSO through the Keycloak master realm
+#               is the login redirect of https://grafana.polaris.local
+for release in "statefulset/$TEMPO_RELEASE" "statefulset/$LOKI_RELEASE" "deployment/$PROMETHEUS_RELEASE" \
+  "deployment/$GRAFANA_RELEASE"; do
+  check "$OBSERVABILITY_NAMESPACE/$release is available" quiet kctl -n "$OBSERVABILITY_NAMESPACE" rollout status "$release" --timeout=60s
+done
+check "HTTPRoute grafana resolves its backend in $OBSERVABILITY_NAMESPACE (ReferenceGrant)" is_true "$(kctl -n "$K8S_NAMESPACE" get httproute grafana \
+  -o jsonpath="{.status.parents[0].conditions[?(@.type=='ResolvedRefs')].status}" 2>/dev/null)"
+check "HTTPRoute grafana is accepted by the Gateway" is_true "$(kctl -n "$K8S_NAMESPACE" get httproute grafana \
+  -o jsonpath="{.status.parents[0].conditions[?(@.type=='Accepted')].status}" 2>/dev/null)"
+# shellcheck disable=SC2016 # expanded by the probe's shell, not here
+lgtm_script='c() { curl -sS --max-time 15 "$@"; }
+tid=$(od -An -N16 -tx1 /dev/urandom | tr -d " \n")
+sid=$(od -An -N8 -tx1 /dev/urandom | tr -d " \n")
+curl -sS -o /dev/null --max-time 15 --cacert /etc/polaris-trust/ca.crt -H "traceparent: 00-$tid-$sid-01" \
+  https://id.polaris.local/realms/master/.well-known/openid-configuration
+echo "trace $tid"
+poll() { # <seconds> <command...>: runs the command until it prints something
+  end=$(( $(date +%s) + $1 )); shift
+  while [ "$(date +%s)" -lt "$end" ]; do out=$("$@" 2>/dev/null || true); [ -z "$out" ] || { printf %s "$out"; return; }; sleep 3; done
+}
+tempo_trace() { c http://tempo.observability.svc.cluster.local:3200/api/traces/$tid | grep -o "nginx-gateway" | head -1; }
+loki_logs() { c -G http://loki.observability.svc.cluster.local:3100/loki/api/v1/query_range --data-urlencode "query={service_name=\"nginx-gateway\"} | trace_id=\"$tid\"" | grep -o "$tid" | head -1; }
+span_metrics() { c -G http://prometheus.observability.svc.cluster.local:9090/api/v1/query --data-urlencode "query=count(traces_spanmetrics_calls_total)" | grep -o "\"value\":\[[0-9.]*,\"[1-9][0-9]*\"\]"; }
+echo "tempo $(poll 90 tempo_trace)"
+echo "loki $(poll 90 loki_logs)"
+echo "spanmetrics $(poll 120 span_metrics | wc -c)"
+echo "down $(c http://prometheus.observability.svc.cluster.local:9090/api/v1/targets | grep -o "\"health\":\"[a-z]*\"" | grep -vc "\"up\"")"
+echo "targets $(c http://prometheus.observability.svc.cluster.local:9090/api/v1/targets | grep -o "\"health\":\"up\"" | wc -l)"
+echo "rules $(c http://prometheus.observability.svc.cluster.local:9090/api/v1/rules | grep -o "\"name\":\"assistant-slo-burn\"" | head -1)"
+echo "grafana $(c http://grafana.observability.svc.cluster.local:3000/api/health | grep -o "\"database\": *\"ok\"")"
+echo "datasources $(c -u "admin:$GRAFANA_PASSWORD" http://grafana.observability.svc.cluster.local:3000/api/datasources | grep -o "\"uid\":\"[a-z]*\"" | tr "\n" " ")"
+echo "dashboards $(c -u "admin:$GRAFANA_PASSWORD" "http://grafana.observability.svc.cluster.local:3000/api/search?type=dash-db" | grep -o "\"uid\"" | wc -l)"
+echo "sso $(curl -sS -o /dev/null --max-time 15 --cacert /etc/polaris-trust/ca.crt -w "%{http_code} %{redirect_url}" https://grafana.polaris.local/login/generic_oauth | cut -d"&" -f1)"'
+# Grafana's admin password is the realm placeholder DEFAULT_PASSWORD (platform-lgtm.sh); the Secret grafana-admin is in
+# the other namespace, so the probe reads the source.
+lgtm_env="$(secret_env GRAFANA_PASSWORD "$KEYCLOAK_REALM_SECRET" DEFAULT_PASSWORD)"
+k5_probes+=(lgtm-smoke) # removed on exit too
+if out="$(run_probe lgtm-smoke "$SMOKE_CURL_IMAGE" 100 "$lgtm_script" "$lgtm_env")"; then
+  log "LGTM probe results:"$'\n'"$out"
+  check "Tempo returns the trace of a request through the Gateway, with the span of service nginx-gateway" \
+    grep -qx "tempo nginx-gateway" <<<"$out"
+  check "Loki returns the Gateway's access log line of that trace by trace_id" \
+    grep -Eqx "loki [0-9a-f]{32}" <<<"$out"
+  check "Tempo's metrics generator wrote span-metrics to Prometheus" grep -Eqx "spanmetrics [1-9][0-9]*" <<<"$out"
+  check "every Prometheus scrape target is up (Collector, Collector self-metrics, Tempo, Loki, Grafana, Prometheus)" \
+    grep -qx "down 0" <<<"$out"
+  check "Prometheus scrapes 6 targets" grep -qx "targets 6" <<<"$out"
+  check "Prometheus loaded the Compose rule files (assistant-slo-burn)" grep -q 'assistant-slo-burn' <<<"$out"
+  check "Grafana is healthy" grep -q 'grafana "database": *"ok"' <<<"$out"
+  check "Grafana has the datasources prometheus, loki and tempo" \
+    grep -Eq '^datasources ("uid":"(loki|prometheus|tempo)" ?){3}$' <<<"$out"
+  check "Grafana has the 3 provisioned dashboards" grep -qx "dashboards 3" <<<"$out"
+  check "https://grafana.polaris.local redirects to the Keycloak master realm for SSO" \
+    grep -q "^sso 302 https://id.polaris.local/realms/master/protocol/openid-connect/auth" <<<"$out"
+else
+  fail "LGTM probe pod did not succeed: $(kctl -n "$K8S_NAMESPACE" logs lgtm-smoke 2>&1 | tail -5)"
+fi
+check "no Grafana Cloud credentials remain in the cluster (Secret grafana-cloud)" \
+  [ -z "$(kctl -n "$K8S_NAMESPACE" get secret grafana-cloud --ignore-not-found -o name)" ]
 
 if [ "$failures" -gt 0 ]; then
   log "$failures smoke check(s) failed"

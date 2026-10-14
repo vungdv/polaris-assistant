@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Waits for the edge, the data stores, Kafka, Keycloak and the apps to be ready. Safe to re-run.
+# Waits for the edge, the data stores, Kafka, Keycloak, the observability stack and the apps to be ready. Safe to re-run.
 set -euo pipefail
 # shellcheck source=SCRIPTDIR/lib.sh
 source "$(dirname "$0")/lib.sh"
@@ -38,6 +38,13 @@ for realm in "${KEYCLOAK_REALM_IMPORTS[@]}"; do
 done
 kctl -n "$K8S_NAMESPACE" rollout status "statefulset/$KEYCLOAK" --timeout="$K8S_WAIT_TIMEOUT" >/dev/null
 kctl -n "$K8S_NAMESPACE" wait --for=condition=Ready "keycloak.k8s.keycloak.org/$KEYCLOAK" \
+  --timeout="$K8S_WAIT_TIMEOUT" >/dev/null
+
+# Local LGTM stack (K12): Helm already waited for each release (--wait); this confirms they are still available.
+log "waiting for Tempo, Loki, Prometheus and Grafana"
+kctl -n "$OBSERVABILITY_NAMESPACE" rollout status "statefulset/$TEMPO_RELEASE" "statefulset/$LOKI_RELEASE" \
+  --timeout="$K8S_WAIT_TIMEOUT" >/dev/null
+kctl -n "$OBSERVABILITY_NAMESPACE" rollout status "deployment/$PROMETHEUS_RELEASE" "deployment/$GRAFANA_RELEASE" \
   --timeout="$K8S_WAIT_TIMEOUT" >/dev/null
 
 # Order & Catalog (K8): Swagger UI is available, and polaris has its two replicas ready (Flyway done) once its image

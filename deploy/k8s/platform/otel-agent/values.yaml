@@ -1,5 +1,5 @@
 # Helm values for the log agent (K4): the same upstream OpenTelemetry Collector chart and contrib image as
-# platform/otel-collector, as a DaemonSet `otel-agent` in the `observability` namespace (namespace.yaml), installed by
+# platform/otel-collector, as a DaemonSet `otel-agent` in the `otel` namespace (platform/otel), installed by
 # scripts/k8s/platform.sh.
 #
 # It replaces Compose's nginx syslog receiver: nginx in the Gateway data plane writes its JSON access log to stdout
@@ -123,7 +123,7 @@ config:
   exporters:
     debug: null
     otlp_grpc/collector:
-      endpoint: otel-collector.polaris.svc.cluster.local:4317
+      endpoint: otel-collector.otel.svc.cluster.local:4317
       tls:
         insecure: true
       timeout: 10s

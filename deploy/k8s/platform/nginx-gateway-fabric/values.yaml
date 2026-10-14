@@ -17,7 +17,7 @@ nginx:
     # The service.name is `ngf:polaris:polaris`; the Collector renames it to Compose's `nginx-gateway`.
     telemetry:
       exporter:
-        endpoint: otel-collector.polaris.svc.cluster.local:4317
+        endpoint: otel-collector.otel.svc.cluster.local:4317
         interval: 5s
         batchSize: 512
         batchCount: 4

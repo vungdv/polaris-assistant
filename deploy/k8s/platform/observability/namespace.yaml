@@ -1,0 +1,14 @@
+# The observability stack (K12): Tempo, Loki, Prometheus and Grafana. Pod Security `restricted` (TR-K10), as in `polaris`.
+# part-of=polaris makes trust-manager write the CA bundle `polaris-ca-bundle` here, which Grafana trusts for Keycloak SSO.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: observability
+  labels:
+    app.kubernetes.io/part-of: polaris
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/warn-version: latest
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/audit-version: latest

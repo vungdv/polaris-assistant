@@ -1,0 +1,130 @@
+# Helm values for Prometheus (K12, D8), installed by scripts/k8s/platform/platform-lgtm.sh from the upstream chart
+# ($PROMETHEUS_CHART from $PROMETHEUS_REPO at $PROMETHEUS_VERSION, deploy/k8s/versions.env) into the `observability`
+# namespace as the StatefulSet and Service `prometheus` (:9090), the name Grafana's datasource and Tempo's remote write
+# use, as in Compose (docker-compose.otel.yml).
+#
+# Ported from docker/telemetry/prometheus/prometheus.yml and the Compose command line:
+#   - the same scrape jobs, against the Services of this chart set (the Collector's Prometheus exporter and self-metrics,
+#     Tempo, Loki, Grafana, Prometheus itself),
+#   - the rule files are the Compose ones, docker/telemetry/prometheus/rules/*.yml (the same files `make test-rules`
+#     checks): platform-lgtm.sh puts them in the ConfigMap `prometheus-rules` and the chart mounts it below,
+#   - the remote-write receiver (Tempo's metrics generator writes span and service-graph metrics here), exemplar storage,
+#     and retention of 15 days or 5GB, whichever is hit first.
+# The chart's Kubernetes service discovery jobs, Alertmanager, Pushgateway, node-exporter and kube-state-metrics are off:
+# Compose has none of them, and discovery would need cluster-wide RBAC. Pod Security `restricted`: the chart's pod
+# context is non-root; the container context below drops every capability.
+
+serviceAccounts:
+  server:
+    # The server discovers nothing, so it needs no API token.
+    automountServiceAccountToken: false
+
+rbac:
+  create: false
+
+alertmanager:
+  enabled: false
+prometheus-pushgateway:
+  enabled: false
+prometheus-node-exporter:
+  enabled: false
+kube-state-metrics:
+  enabled: false
+
+server:
+  fullnameOverride: prometheus
+  retention: 15d
+  retentionSize: 5GB
+  extraFlags:
+    - web.enable-lifecycle
+    # Tempo's metrics generator remote-writes here.
+    - web.enable-remote-write-receiver
+  extraArgs:
+    enable-feature: exemplar-storage
+  # Grafana's datasource and Tempo's remote write address the Service by :9090, as in Compose (the chart's default is 80).
+  service:
+    servicePort: 9090
+  global:
+    scrape_interval: 15s
+    evaluation_interval: 30s
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop: ["ALL"]
+    seccompProfile:
+      type: RuntimeDefault
+  persistentVolume:
+    enabled: true
+    size: 8Gi
+  resources:
+    requests:
+      cpu: 50m
+      memory: 256Mi
+    limits:
+      memory: 1Gi
+  extraConfigmapMounts:
+    - name: rules
+      mountPath: /etc/prometheus/rules
+      configMap: prometheus-rules
+      readOnly: true
+
+# The chart's own config-reload sidecar is kept; it follows the same context.
+configmapReload:
+  prometheus:
+    containerSecurityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      capabilities:
+        drop: ["ALL"]
+      seccompProfile:
+        type: RuntimeDefault
+
+serverFiles:
+  # Helm replaces lists: the chart's rule_files are replaced by the Compose rule directory.
+  prometheus.yml:
+    rule_files:
+      - /etc/prometheus/rules/*.yml
+
+scrapeConfigs:
+  kubernetes-api-servers:
+    enabled: false
+  kubernetes-nodes:
+    enabled: false
+  kubernetes-nodes-cadvisor:
+    enabled: false
+  kubernetes-service-endpoints:
+    enabled: false
+  kubernetes-service-endpoints-slow:
+    enabled: false
+  prometheus-pushgateway:
+    enabled: false
+  kubernetes-services:
+    enabled: false
+  kubernetes-pods:
+    enabled: false
+  kubernetes-pods-slow:
+    enabled: false
+
+# docker/telemetry/prometheus/prometheus.yml, with the Services of this namespace. (`prometheus` itself is the chart's
+# own job.)
+extraScrapeConfigs: |
+  # Application metrics re-exported by the Collector's prometheus exporter
+  - job_name: 'otel-collector'
+    scrape_interval: 10s
+    static_configs:
+      - targets: ['otel-collector.otel.svc.cluster.local:8889']
+  # Collector self-metrics (accepted/refused/dropped, exporter queue and failures)
+  - job_name: 'otel-collector-self'
+    scrape_interval: 10s
+    static_configs:
+      - targets: ['otel-collector.otel.svc.cluster.local:8888']
+  - job_name: 'tempo'
+    static_configs:
+      - targets: ['tempo:3200']
+  - job_name: 'loki'
+    static_configs:
+      - targets: ['loki:3100']
+  - job_name: 'grafana'
+    static_configs:
+      - targets: ['grafana:3000']
