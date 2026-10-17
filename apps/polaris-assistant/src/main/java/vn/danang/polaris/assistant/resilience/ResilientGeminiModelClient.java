@@ -10,7 +10,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
 
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
@@ -40,7 +39,6 @@ import vn.danang.polaris.assistant.entity.AssistantMessage;
  * half-opens.
  */
 @Component
-@Primary
 public class ResilientGeminiModelClient implements AssistantModelClient {
 
     private static final Logger log = LoggerFactory.getLogger(ResilientGeminiModelClient.class);
