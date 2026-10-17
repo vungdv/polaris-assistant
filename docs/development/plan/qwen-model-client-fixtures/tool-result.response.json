@@ -1,0 +1,26 @@
+{
+  "id": "chatcmpl-488",
+  "object": "chat.completion",
+  "created": 1792254712,
+  "model": "qwen3:4b",
+  "system_fingerprint": "fp_ollama",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "The current weather in Hanoi is 31\u00b0C and humid.",
+        "reasoning": "Okay, the user asked for the weather in Hanoi, so I called the get_weather function with the city set to Hanoi. The response came back as \"31C, humid\". Now I ne [...TRUNCATED in fixture; original was 1859 chars]"
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 179,
+    "prompt_tokens_details": {
+      "cached_tokens": 1
+    },
+    "completion_tokens": 452,
+    "total_tokens": 631
+  }
+}

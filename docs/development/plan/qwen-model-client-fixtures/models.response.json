@@ -1,0 +1,11 @@
+{
+    "object": "list",
+    "data": [
+        {
+            "id": "qwen3:4b",
+            "object": "model",
+            "created": 1792222805,
+            "owned_by": "library"
+        }
+    ]
+}
