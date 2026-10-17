@@ -6,15 +6,15 @@
 
 ## 1. Problem statement
 
-Polaris Assistant depends on Gemini for reasoning, it's critical integration point and there are risks:
+Polaris Assistant depends on Gemini for reasoning. It is a critical integration point and carries two risks:
 - A single point of failure
 - Cost
 
-So we consider to add one more option for reasoning, and we use Ollama with Qwen model.
+So we propose adding a second reasoning option: Qwen served by Ollama.
 
 ### Success criteria (definition of done)
 
-1. With `polaris.ai.provider=qwen` and `QWEN_BASE_URL` pointing at a local Ollama (`qwen3:4b`), a chat turn that needs no tool returns a reply, and a turn that needs a tool completes the tool round trip (call, tool result, final text) through `AssistantChatService`, with no code change outside the new provider.
+1. With `polaris.ai.provider=qwen` and `QWEN_BASE_URL` pointing at a local Ollama (`qwen3:4b`), a chat turn that needs no tool returns a reply, and a turn that needs a tool completes the tool round trip (call, tool result, final text) through `AssistantChatService`, with no code change beyond the S0a/S0b/S1 wiring and the new provider.
 2. The `assistant-bdd.md` scenario subset covering chat and a single tool call passes against `qwen` (the full suite is not required; see §7.3).
 3. With `provider=gemini` (default) every existing test passes unchanged apart from imports and config keys, and existing ConfigMaps (env var names) keep working.
 4. A provider failure surfaces as the same 503 as Gemini (X1) and `/actuator/health` names the selected provider.
@@ -31,7 +31,7 @@ So the class is `OpenAiCompatibleModelClient`, selected by `polaris.ai.provider=
 
 The contract is the existing `AssistantModelClient` interface; the new client is a drop-in for Gemini. The wire format is the public [OpenAI Chat Completions API](https://platform.openai.com/docs/api-reference/chat/create) (`POST {base-url}/chat/completions`, `stream=false`), not restated here. **`base-url` includes the API version path**, e.g. `http://localhost:11434/v1` for Ollama, so the client appends only `/chat/completions` and `/models`. This keeps the client provider-agnostic: a server whose version prefix differs (DashScope's is unverified, see §8) needs only a different `base-url`.
 
-Each F item has acceptance scenarios (given/when/then) that map directly to tests.
+Each F item has acceptance scenarios (given/when/then) that map directly to tests. Scenarios use the real captures in §8 where one exists (F1.1, F1.2, F1.4, F1.7) and the clearly marked `synthetic-*` fixtures otherwise (F1.3, F1.5, F1.6).
 
 ### F1. Qwen behaviours beyond the spec
 
@@ -114,7 +114,7 @@ Every slice also satisfies §4. The table lists only what is **specific** to eac
 |:--|:--|:--|:--|:--|
 | S0a | **Properties and config move** | none | X5 | `AssistantAiProperties` → `GeminiProperties` (`polaris.ai.gemini.*`) plus `ModelProviderProperties`. Env var names unchanged, so ConfigMaps are unaffected; grep and update every direct `polaris.ai.*` key (test yml, `-D` overrides, docs). Existing suite stays green with only imports and keys changed. |
 | S0b | **Delegator and resilience generalisation** | none | X3, X7 | `DelegatingModelClient` delegating to Gemini only; `ResilientGeminiModelClient` → `ResilientModelClient(provider)` (§7.6); `Duration turnDeadline()` on the contract (§7.7). Existing suite green; tests: delegation, `turnDeadline()` forwarded, Gemini breaker behaviour unchanged. |
-| S1 | **Qwen client and selection** | F1, F2 | X1, X2, X4, X7, X8 | `OpenAiCompatibleModelClient` with mapper and parser; `QwenProperties`; `qwen` registered in `DelegatingModelClient` with startup validation. Tests: F1.1-F1.7 and F2.1-F2.4 on the §8 fixtures; Bearer header only with a key; default `systemPrompt` of `QwenProperties` equals `GeminiProperties` (§7.8). Unguarded by a breaker until S2, dev-only. |
+| S1 | **Qwen client and selection** | F1, F2 | X1, X2, X4, X7, X8 | `OpenAiCompatibleModelClient` with mapper and parser; `QwenProperties`; `qwen` registered in `DelegatingModelClient` with startup validation. Tests: F1.1-F1.7 and F2.1-F2.4 on the §8 fixtures; Bearer header only with a key; default `systemPrompt` of `QwenProperties` equals `GeminiProperties` (§7.8). Between S1 and S2, `provider=qwen` has no breaker and is dev-only; the default stays `gemini`. **Decision gate: §7.9 must be settled before S1 merges.** |
 | S2 | **Qwen resilience** | none | X3 | Breaker `qwen` with retry via `ResilientModelClient`; runbook line for `scripts/ollama.sh`. Tests: breaker opens and the next call fails fast without HTTP; retry 503 → 200; no retry on 400. |
 | S3 | **Qwen health** | none | X9 | Health indicator for the selected provider. Tests: UP/DOWN against WireMock `/models`; not in readiness group. |
 
@@ -133,6 +133,13 @@ Status: **Proposed**, pending reviewer sign-off.
 7. **Who reads `turnDeadline`.** Configured per provider. `AssistantModelClient` gains `Duration turnDeadline()`; each provider returns its own, `DelegatingModelClient` forwards to the selected one, and `AssistantChatService` asks the contract instead of reading properties (`AssistantChatService.java:91`). Part of S0b.
 8. **`systemPrompt` duplicated per provider.** Trade-off: each provider can be tuned independently (Qwen small models may need a different prompt) and providers stay decoupled, at the cost of silent drift when one default is edited. Mitigation: a test in S1 asserts the two defaults are equal; a deliberate divergence must change that test and say why.
 
+9. **Reasoning tokens vs the 25s turn deadline.** The spike saw ~3,300 reasoning tokens for a trivial prompt (§8), which can exhaust `QWEN_TURN_DEADLINE` on small hardware. Gate for S1: pick one of these (or combine) before merge, recorded here:
+   - (a) disable thinking through a request option, if Ollama's OpenAI-compatible endpoint supports one (to be checked in the spike, not yet run);
+   - (b) a larger default `QWEN_TURN_DEADLINE` and `timeout-seconds` for Qwen only;
+   - (c) a smaller or non-thinking model (`qwen2.5:3b`, per `scripts/ollama.sh`).
+
+   Proposed default: try (a) first, fall back to (b). Not decided; reviewer to confirm.
+
 ### Slice Tracker
 
 Slices run top to bottom; only the `execute-plan` coordinator edits this table.
@@ -142,13 +149,13 @@ Slices run top to bottom; only the `execute-plan` coordinator edits this table.
 
 ## 8. Spike results
 
-Run 2026-10-17 against local Ollama (`scripts/ollama.sh`, model `qwen3:4b`, server at `localhost:11434`), non-streaming. Fixtures are in [`qwen-model-client-fixtures/`](qwen-model-client-fixtures/). The `reasoning` strings in the response fixtures are truncated (marked in the file); nothing else is edited.
+Run 2026-10-17 against local Ollama (`scripts/ollama.sh`, model `qwen3:4b`, server at `localhost:11434`), non-streaming. Fixtures are in [`qwen-model-client-fixtures/`](qwen-model-client-fixtures/). The `reasoning` strings in the response fixtures are truncated (marked in the file); nothing else is edited. `tool-result.request.json` is **hand-assembled** from the real `tool-call` exchange (assistant `tool_calls` with `id` and `type`, without the non-standard `index` Ollama adds, plus a `tool` message), then sent for real; only its response is a capture. The `synthetic-*` fixtures (`no-id-tool-call`, `inline-think`, `malformed-args`) are **hand-written, not captures**, each carries a `_synthetic` key saying so, and they exist only to make F1.3, F1.5 and F1.6 testable.
 
 | # | Assumption | Result | Evidence |
 |:--|:--|:--|:--|
 | 1 | `tool_calls[].function.arguments` is a JSON string | **Verified**: `"{\"city\":\"Hanoi\"}"`; `finish_reason: tool_calls`, `content` is `""` | `tool-call.response.json` |
 | 2 | `<think>` arrives inline in `content` | **Disproved on Ollama**: reasoning arrives in a separate message field `reasoning`; `content` is clean. F1(b) is revised: ignore `reasoning`, keep inline stripping only as defence | `text.response.json`, `tool-call.response.json` |
-| 3 | Tool call may lack `id` | **Not observed**: Ollama returned `call_bcon1mjg` (plus a non-standard `index`). Generation stays as defence; F1.6 must use a synthetic fixture, labelled as such | `tool-call.response.json` |
+| 3 | Tool call may lack `id` | **Not observed**: Ollama returned `call_bcon1mjg` (plus a non-standard `index`). Generation stays as defence; F1.6 uses `synthetic-no-id-tool-call.response.json` | `tool-call.response.json` |
 | 4 | Tool result round trip with `tool_call_id` | **Verified**: final reply `The current weather in Hanoi is 31°C and humid.`, `finish_reason: stop` | `tool-result.*.json` |
 | 5 | Bearer header | **Accepted and ignored** by Ollama (request sent with `Authorization: Bearer test-key`; the round trip sent none and also worked). Whether DashScope requires it is **UNVERIFIED** | commands below |
 | 6 | `GET {base}/models` health probe | **Verified**: 200 with `{"object":"list","data":[{"id":"qwen3:4b",…}]}` | `models.response.json` |
@@ -156,7 +163,7 @@ Run 2026-10-17 against local Ollama (`scripts/ollama.sh`, model `qwen3:4b`, serv
 | 8 | DashScope: same API, compatible-mode path (`…/compatible-mode/v1`), Bearer key, model `qwen-plus` | **UNVERIFIED**, not run (needs an account/key). Hence `base-url` includes the version path and DashScope is out of scope (§5) | n/a |
 | 9 | Behaviour on non-2xx (400, 503) and timeouts | **UNVERIFIED** against real Ollama; S1 tests use WireMock-synthesised errors | n/a |
 
-Also observed, relevant to sizing: a trivial 5-word prompt produced ~3,300 completion tokens of `reasoning` on `qwen3:4b`, and the tool call turn ~1,700. With `timeout-seconds: 60` and `turn-deadline: 25s`, thinking can exhaust the deadline on small hardware; whether to disable thinking (e.g. a request option) is an open question for review, not decided here.
+Also observed, relevant to sizing: a trivial 5-word prompt produced ~3,300 completion tokens of `reasoning` on `qwen3:4b`, and the tool call turn ~1,700. With `timeout-seconds: 60` and `turn-deadline: 25s`, thinking can exhaust the deadline on small hardware; see decision §7.9 (S1 gate).
 
 ### Reproduce
 
