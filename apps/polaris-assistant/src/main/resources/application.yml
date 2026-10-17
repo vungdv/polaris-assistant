@@ -46,13 +46,19 @@ spring:
 
 polaris:
   ai:
-    provider: gemini
+    # gemini | qwen (local Ollama, see scripts/ollama.sh)
+    provider: ${POLARIS_AI_PROVIDER:gemini}
     api-key: ${GEMINI_API_KEY:${POLARIS_AI_API_KEY:}}
     model: ${POLARIS_AI_MODEL:gemini-3.6-flash}
     base-url: ${POLARIS_AI_BASE_URL:https://generativelanguage.googleapis.com}
     timeout-seconds: ${POLARIS_AI_TIMEOUT_SECONDS:30}
     # Budget for a whole chat turn, below the 30 s chat latency SLO; exhausted -> 503
     turn-deadline: ${POLARIS_AI_TURN_DEADLINE:25s}
+    # Local Qwen via Ollama, used when provider is qwen
+    qwen:
+      base-url: ${POLARIS_AI_QWEN_BASE_URL:http://localhost:11434}
+      model: ${POLARIS_AI_QWEN_MODEL:qwen3:4b}
+      timeout-seconds: ${POLARIS_AI_QWEN_TIMEOUT_SECONDS:60}
     # Grafana AI Observability (agento11y SDK): OTel GenAI semconv spans + gen_ai.client.* metrics.
     telemetry:
       agent-version: ${AGENTO11Y_AGENT_VERSION:}

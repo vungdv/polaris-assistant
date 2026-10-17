@@ -19,6 +19,7 @@ public final class GenAiTelemetry {
 
     /** {@code gen_ai.provider.name} values; Grafana Cloud prices tokens by provider + model. */
     public static final String PROVIDER_GEMINI = "gemini";
+    public static final String PROVIDER_OLLAMA = "ollama";
     public static final String PROVIDER_TYPESAFE = "typesafe";
 
     private GenAiTelemetry() {

@@ -35,6 +35,40 @@ patches:
       - op: add
         path: /data/POLARIS_AI_TURN_DEADLINE
         value: 40s
+  # Local model: the assistant talks to Qwen on the host's Ollama (scripts/ollama.sh install) instead of Gemini.
+  # host.docker.internal is the Docker Desktop name for the Mac, reached from the kind nodes; a 4B model on a laptop
+  # is slower than Gemini, so the per-call timeout and the turn deadline (replacing the 40 s above) are longer.
+  - target:
+      kind: ConfigMap
+      name: polaris-assistant
+    patch: |-
+      - op: add
+        path: /data/POLARIS_AI_PROVIDER
+        value: qwen
+      - op: add
+        path: /data/POLARIS_AI_QWEN_BASE_URL
+        value: http://host.docker.internal:11434
+      - op: add
+        path: /data/POLARIS_AI_QWEN_TIMEOUT_SECONDS
+        value: "60"
+      - op: replace
+        path: /data/POLARIS_AI_TURN_DEADLINE
+        value: 60s
+  # The base policy only lets the assistant out to public addresses on 443; Ollama is on the host's private address.
+  - target:
+      group: networking.k8s.io
+      kind: NetworkPolicy
+      name: polaris-assistant
+    patch: |-
+      - op: add
+        path: /spec/egress/-
+        value:
+          to:
+            - ipBlock:
+                cidr: 0.0.0.0/0
+          ports:
+            - protocol: TCP
+              port: 11434
   # Node drain (K11): polaris and polaris-assistant, the replicated stateless apps, also run on the kind worker, whose
   # taint keeps every other pod off it (kind/cluster.yaml). Their topology spread puts one replica on each node.
   - target:
