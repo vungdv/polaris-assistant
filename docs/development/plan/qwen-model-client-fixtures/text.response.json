@@ -1,0 +1,26 @@
+{
+  "id": "chatcmpl-641",
+  "object": "chat.completion",
+  "created": 1792254635,
+  "model": "qwen3:4b",
+  "system_fingerprint": "fp_ollama",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "Hi how are you doing",
+        "reasoning": "We are to say \"hi\" in exactly five words.\n Since the instruction says \"say hi\", we can use the word \"hi\" but that's only one word.\n We need to form a phrase of  [...TRUNCATED in fixture; original was 11644 chars]"
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 16,
+    "prompt_tokens_details": {
+      "cached_tokens": 1
+    },
+    "completion_tokens": 3365,
+    "total_tokens": 3381
+  }
+}
