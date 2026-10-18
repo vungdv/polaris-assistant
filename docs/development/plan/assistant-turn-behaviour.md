@@ -33,7 +33,7 @@ The approach: **(1)** write down every path as a catalogue with one test each, *
 | T11 | Session of another user | refused | `loadHistory` owner check | `403` Problem Details | nothing | not counted | ✅ (refused before the turn starts) |
 | T12 | Model unavailable, no tool ran | failed | Transport, 429, 5xx (A1) | `503` Problem Details + `Retry-After` | nothing | `failed` | ⚠️ `failed` mixes T12–T17 |
 | T13 | Model unavailable after tools ran | failed | As T12, mid-loop (stability R5) | `503` | user + tool turns, no reply | `failed` | ⚠️ as T12 |
-| T14 | Turn deadline used up | failed | `polaris.ai.turn-deadline` (A2) | `503` | as T12/T13 | `failed` | ⚠️ as T12 |
+| T14 | Turn deadline used up | failed | `polaris.ai.gemini.turn-deadline` (A2) | `503` | as T12/T13 | `failed` | ⚠️ as T12 |
 | T15 | Model rejects our request | failed | Gemini 4xx other than 429 (A3, in progress) | `500` Problem Details | as T12/T13 | `failed` | ⚠️ as T12 |
 | T16 | Breaker open | failed | `gemini` breaker open (A3, in progress) | `503` straight away | nothing | `failed` | ⚠️ as T12 |
 | T17 | Unexpected error | failed | Persistence, `ToolManager` contract violation, … | Shared `GlobalExceptionHandler` | depends | `failed` | ⚠️ as T12 |

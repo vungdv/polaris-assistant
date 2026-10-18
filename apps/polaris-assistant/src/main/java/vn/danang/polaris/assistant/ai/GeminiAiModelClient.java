@@ -31,7 +31,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import io.modelcontextprotocol.spec.McpSchema.Tool;
 import jakarta.annotation.Nullable;
-import vn.danang.polaris.assistant.config.AssistantAiProperties;
+import vn.danang.polaris.assistant.config.GeminiProperties;
 import vn.danang.polaris.assistant.entity.AssistantMessage;
 import vn.danang.polaris.assistant.entity.MessageRole;
 import vn.danang.polaris.assistant.observability.genai.GenAiGeneration;
@@ -54,18 +54,18 @@ public class GeminiAiModelClient implements AssistantModelClient {
 
     private static final Logger log = LoggerFactory.getLogger(GeminiAiModelClient.class);
 
-    private final AssistantAiProperties aiModelConfig;
+    private final GeminiProperties aiModelConfig;
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
 
     @Autowired
-    public GeminiAiModelClient(AssistantAiProperties aiModelConfig) {
+    public GeminiAiModelClient(GeminiProperties aiModelConfig) {
         this(aiModelConfig, HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(10))
                 .build(), new ObjectMapper().findAndRegisterModules());
     }
 
-    public GeminiAiModelClient(AssistantAiProperties aiModelConfig, HttpClient httpClient, ObjectMapper objectMapper) {
+    public GeminiAiModelClient(GeminiProperties aiModelConfig, HttpClient httpClient, ObjectMapper objectMapper) {
         this.aiModelConfig = aiModelConfig;
         this.httpClient = httpClient;
         this.objectMapper = objectMapper;
@@ -96,7 +96,7 @@ public class GeminiAiModelClient implements AssistantModelClient {
     public ModelResponse generateResponse(List<AssistantMessage> messages, List<Tool> tools, @Nullable ModelRequestContext context) {
         String apiKey = aiModelConfig.getApiKey();
         if (apiKey == null) {
-            throw new IllegalArgumentException("Live AI Model key is not configured. Set GEMINI_API_KEY or polaris.ai.api-key to connect to live Gemini.");
+            throw new IllegalArgumentException("Live AI Model key is not configured. Set GEMINI_API_KEY or polaris.ai.gemini.api-key to connect to live Gemini.");
         }
         if (apiKey.isBlank() || (apiKey.startsWith("${") && apiKey.endsWith("}"))) {
             log.info("No AI API key configured; returning local assistant fallback.");
@@ -108,7 +108,7 @@ public class GeminiAiModelClient implements AssistantModelClient {
                             .reduce((first, second) -> second)
                             .orElse("")
                     : "";
-            return new ModelResponse("I am Polaris Assistant! (Live AI Model key is not configured. Set GEMINI_API_KEY or polaris.ai.api-key to connect to live Gemini. Echo: \"" + lastUserMessage + "\")");
+            return new ModelResponse("I am Polaris Assistant! (Live AI Model key is not configured. Set GEMINI_API_KEY or polaris.ai.gemini.api-key to connect to live Gemini. Echo: \"" + lastUserMessage + "\")");
         }
 
         return executeAndParse(messages, tools, Optional.ofNullable(context).orElseGet(ModelRequestContext::empty));

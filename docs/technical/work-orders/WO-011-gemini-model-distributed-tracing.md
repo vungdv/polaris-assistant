@@ -29,9 +29,9 @@ Implement distributed tracing for all Google Gemini model calls in `apps/polaris
 
 1. **Inject Tracer**:
    - Add field `@Nullable private final Tracer tracer;` (import `io.micrometer.tracing.Tracer`, `io.micrometer.tracing.Span`, `jakarta.annotation.Nullable`).
-   - Add `@Autowired` constructor accepting `AssistantAiProperties aiModelConfig, ObjectProvider<Tracer> tracerProvider`.
+   - Add `@Autowired` constructor accepting `GeminiProperties aiModelConfig, ObjectProvider<Tracer> tracerProvider`.
    - Preserve existing constructors `(aiModelConfig)`, `(aiModelConfig, httpClient, objectMapper)`, chaining to the full 4-argument constructor:
-     `public GeminiAiModelClient(AssistantAiProperties aiModelConfig, HttpClient httpClient, ObjectMapper objectMapper, @Nullable Tracer tracer)`
+     `public GeminiAiModelClient(GeminiProperties aiModelConfig, HttpClient httpClient, ObjectMapper objectMapper, @Nullable Tracer tracer)`
 2. **Span Creation in `generateResponse`**:
    - Guard against unconfigured API keys (return local fallback immediately before starting network span).
    - If `this.tracer == null`: invoke HTTP request execution directly.

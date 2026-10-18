@@ -12,7 +12,7 @@ import org.springframework.boot.health.contributor.Health;
 import org.springframework.boot.health.contributor.HealthIndicator;
 import org.springframework.stereotype.Component;
 
-import vn.danang.polaris.assistant.config.AssistantAiProperties;
+import vn.danang.polaris.assistant.config.GeminiProperties;
 
 /**
  * Reports whether the Gemini API is reachable, on {@code /actuator/health} only (not readiness).
@@ -22,7 +22,7 @@ import vn.danang.polaris.assistant.config.AssistantAiProperties;
  * than a {@code generateContent} call: it exercises the same host, TLS and API key as a real
  * request but returns model info instead of generated content, so it costs no tokens and stays
  * cheap enough to run on every probe. A short, fixed timeout is used here regardless of
- * {@code polaris.ai.timeout-seconds}, so a slow/unreachable Gemini never stalls a
+ * {@code polaris.ai.gemini.timeout-seconds}, so a slow/unreachable Gemini never stalls a
  * {@code /actuator/health} call.
  *
  * Can be turned off with {@code management.health.gemini.enabled=false}, e.g. in test suites
@@ -34,15 +34,15 @@ public class GeminiHealthIndicator implements HealthIndicator {
 
     static final Duration PROBE_TIMEOUT = Duration.ofSeconds(2);
 
-    private final AssistantAiProperties properties;
+    private final GeminiProperties properties;
     private final HttpClient httpClient;
 
     @Autowired
-    public GeminiHealthIndicator(AssistantAiProperties properties) {
+    public GeminiHealthIndicator(GeminiProperties properties) {
         this(properties, HttpClient.newBuilder().connectTimeout(PROBE_TIMEOUT).build());
     }
 
-    GeminiHealthIndicator(AssistantAiProperties properties, HttpClient httpClient) {
+    GeminiHealthIndicator(GeminiProperties properties, HttpClient httpClient) {
         this.properties = properties;
         this.httpClient = httpClient;
     }

@@ -55,8 +55,9 @@ spring:
 polaris:
   ai:
     provider: gemini
-    api-key: ${GEMINI_API_KEY:${POLARIS_AI_API_KEY:}}
-    model: ${POLARIS_AI_MODEL:gemini-3.6-flash}
+    gemini:
+      api-key: ${GEMINI_API_KEY:${POLARIS_AI_API_KEY:}}
+      model: ${POLARIS_AI_MODEL:gemini-3.6-flash}
   cache:
     products:
       local-ttl: ${POLARIS_CACHE_PRODUCTS_LOCAL_TTL:30s}

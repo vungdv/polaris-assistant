@@ -21,7 +21,7 @@ import io.micrometer.tracing.Span;
 import io.micrometer.tracing.Tracer;
 import io.modelcontextprotocol.spec.McpSchema.Tool;
 import jakarta.annotation.Nullable;
-import vn.danang.polaris.assistant.config.AssistantAiProperties;
+import vn.danang.polaris.assistant.config.GeminiProperties;
 import vn.danang.polaris.assistant.dto.ChatMessageRequest;
 import vn.danang.polaris.assistant.dto.ChatMessageResponse;
 import vn.danang.polaris.assistant.dto.ChatWidget;
@@ -53,7 +53,7 @@ import vn.danang.polaris.assistant.observability.trace.SpanTag;
  * Cards ({@link ChatWidget}) produced by successful tool calls are returned with the reply and persisted
  * on the turn's final assistant message ({@code widget_type} / {@code widget_payload}).
  * <p>
- * Each turn has a deadline ({@code polaris.ai.turn-deadline}) passed to every model call; when it runs out the
+ * Each turn has a deadline ({@code polaris.ai.gemini.turn-deadline}) passed to every model call; when it runs out the
  * model client raises {@link ModelUnavailableException}.
  */
 @Service
@@ -79,7 +79,7 @@ public class AssistantChatService {
             SessionStore sessionStore,
             ObjectProvider<ObjectMapper> objectMapperProvider,
             AssistantOutcomeMetrics outcomeMetrics,
-            AssistantAiProperties aiProperties) {
+            GeminiProperties aiProperties) {
         this.modelClient = Objects.requireNonNull(modelClient, "modelClient must not be null");
         this.tracer = Optional.ofNullable(tracerProvider).map(ObjectProvider::getIfAvailable);
         this.intentResolutionFacade = Objects.requireNonNull(intentResolutionFacade, "intentResolutionFacade must not be null");
@@ -108,7 +108,7 @@ public class AssistantChatService {
             @Nullable ObjectMapper objectMapper,
             AssistantOutcomeMetrics outcomeMetrics) {
         this(modelClient, tracerProvider, intentResolutionFacade, sessionStore, objectMapper, outcomeMetrics,
-                new AssistantAiProperties().getTurnDeadline());
+                new GeminiProperties().getTurnDeadline());
     }
 
     public AssistantChatService(

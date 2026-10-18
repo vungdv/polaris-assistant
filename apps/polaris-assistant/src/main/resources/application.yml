@@ -5,7 +5,7 @@ server:
 
 spring:
   lifecycle:
-    # Upper bound for the graceful drain. Covers a whole chat turn (polaris.ai.turn-deadline, 25 s), so a rolling restart doesn't cut an SSE turn.
+    # Upper bound for the graceful drain. Covers a whole chat turn (polaris.ai.gemini.turn-deadline, 25 s), so a rolling restart doesn't cut an SSE turn.
     timeout-per-shutdown-phase: 30s
   application:
     name: Polaris-Assistant
@@ -46,13 +46,14 @@ spring:
 
 polaris:
   ai:
-    provider: gemini
-    api-key: ${GEMINI_API_KEY:${POLARIS_AI_API_KEY:}}
-    model: ${POLARIS_AI_MODEL:gemini-3.6-flash}
-    base-url: ${POLARIS_AI_BASE_URL:https://generativelanguage.googleapis.com}
-    timeout-seconds: ${POLARIS_AI_TIMEOUT_SECONDS:30}
-    # Budget for a whole chat turn, below the 30 s chat latency SLO; exhausted -> 503
-    turn-deadline: ${POLARIS_AI_TURN_DEADLINE:25s}
+    provider: ${POLARIS_AI_PROVIDER:gemini}
+    gemini:
+      api-key: ${GEMINI_API_KEY:${POLARIS_AI_API_KEY:}}
+      model: ${POLARIS_AI_MODEL:gemini-3.6-flash}
+      base-url: ${POLARIS_AI_BASE_URL:https://generativelanguage.googleapis.com}
+      timeout-seconds: ${POLARIS_AI_TIMEOUT_SECONDS:30}
+      # Budget for a whole chat turn, below the 30 s chat latency SLO; exhausted -> 503
+      turn-deadline: ${POLARIS_AI_TURN_DEADLINE:25s}
     # Grafana AI Observability (agento11y SDK): OTel GenAI semconv spans + gen_ai.client.* metrics.
     telemetry:
       agent-version: ${AGENTO11Y_AGENT_VERSION:}

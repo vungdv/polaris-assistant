@@ -103,10 +103,10 @@ class AssistantModelOutageIntegrationTest {
 
     @DynamicPropertySource
     static void geminiProperties(DynamicPropertyRegistry registry) {
-        registry.add("polaris.ai.base-url", gemini::baseUrl);
-        registry.add("polaris.ai.api-key", () -> "test-wiremock-api-key");
-        registry.add("polaris.ai.model", () -> "gemini-3.6-flash");
-        registry.add("polaris.ai.timeout-seconds", () -> 5);
+        registry.add("polaris.ai.gemini.base-url", gemini::baseUrl);
+        registry.add("polaris.ai.gemini.api-key", () -> "test-wiremock-api-key");
+        registry.add("polaris.ai.gemini.model", () -> "gemini-3.6-flash");
+        registry.add("polaris.ai.gemini.timeout-seconds", () -> 5);
     }
 
     @AfterAll

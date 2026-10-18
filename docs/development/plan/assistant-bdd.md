@@ -26,7 +26,7 @@ The assistant's behaviour is specified in prose (PRD-003 §5 Given/When/Then, th
   | PostgreSQL | JDBC | Testcontainers `postgres:16` (real) |
   | Identity provider | JWT | `SecurityMockMvcRequestPostProcessors.jwt()` with subject + `PERM_*` authorities |
 
-  One WireMock server serves Gemini, TypeSafe and customers on separate paths, wired with `@DynamicPropertySource` (`polaris.ai.base-url`, `polaris.typesafe.base-url`, customers base URL).
+  One WireMock server serves Gemini, TypeSafe and customers on separate paths, wired with `@DynamicPropertySource` (`polaris.ai.gemini.base-url`, `polaris.typesafe.base-url`, customers base URL).
 - **Scenarios assert observable contracts only:** HTTP status, Problem Details `type`, `Retry-After`, card types, persisted rows, metric `outcome`. Never the model's prose, except fixed texts Polaris writes itself.
 - **Small, shared step vocabulary**, one step class per concern: `ShopperSteps` (identity, sending a message), `GeminiSteps`, `TypeSafeSteps`, `McpSteps`, `ResponseSteps`, `PersistenceSteps`, `MetricSteps`. Target ≈15–20 steps in total by the end; a new step needs a reason in the PR.
 - **Tags link behaviour to business and code:** `@T<n>` (turn path), `@PRD-003-S<n>` (PRD scenario), `@happy` / `@degraded` / `@refused` / `@failed` (class), `@gap` (today's behaviour, changed by a later slice of `assistant-turn-behaviour.md`), `@smoke`.

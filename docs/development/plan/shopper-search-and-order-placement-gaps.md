@@ -173,7 +173,7 @@ S8 (product cards) ────────────────┘ (widget p
 ```
 
 ### S1 — Close the low-confidence tool bypass *(Assistant; G2)* — ship first
-**Files:** `intent/DefaultIntentResolver.java`, `tools/PolicyToolManager.java`, `intents.json`, `config/AssistantAiProperties.java`
+**Files:** `intent/DefaultIntentResolver.java`, `tools/PolicyToolManager.java`, `intents.json`, `config/GeminiProperties.java`
 1. Below threshold, fall back to **read-only tools only**: the union of `allowedTools` from intents with `mutating=false`. Never the full tool list.
 2. Replace the per-intent scope check with a per-**tool** scope map derived from `intents.json` (tool → `requiredScope`), so an empty or low-confidence intent can't skip authorization.
 3. Tighten the default system prompt: only use tool data for products, prices and stock (FR-1); never say an order is placed unless a tool confirmed it.

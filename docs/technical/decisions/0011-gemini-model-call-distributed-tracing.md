@@ -63,14 +63,14 @@ Annotate `GeminiAiModelClient.generateResponse` with Micrometer's `@Observed`.
    ```java
    @Component
    public class GeminiAiModelClient implements AssistantModelClient {
-       private final AssistantAiProperties aiModelConfig;
+       private final GeminiProperties aiModelConfig;
        private final HttpClient httpClient;
        private final ObjectMapper objectMapper;
        @Nullable
        private final Tracer tracer;
 
        @Autowired
-       public GeminiAiModelClient(AssistantAiProperties aiModelConfig, ObjectProvider<Tracer> tracerProvider) {
+       public GeminiAiModelClient(GeminiProperties aiModelConfig, ObjectProvider<Tracer> tracerProvider) {
            this(aiModelConfig, HttpClient.newBuilder()
                    .connectTimeout(Duration.ofSeconds(10))
                    .build(), new ObjectMapper().findAndRegisterModules(),
@@ -78,13 +78,13 @@ Annotate `GeminiAiModelClient.generateResponse` with Micrometer's `@Observed`.
        }
 
        // Backwards-compatible constructors for testing & legacy calls
-       public GeminiAiModelClient(AssistantAiProperties aiModelConfig) {
+       public GeminiAiModelClient(GeminiProperties aiModelConfig) {
            this(aiModelConfig, (Tracer) null);
        }
-       public GeminiAiModelClient(AssistantAiProperties aiModelConfig, HttpClient httpClient, ObjectMapper objectMapper) {
+       public GeminiAiModelClient(GeminiProperties aiModelConfig, HttpClient httpClient, ObjectMapper objectMapper) {
            this(aiModelConfig, httpClient, objectMapper, null);
        }
-       public GeminiAiModelClient(AssistantAiProperties aiModelConfig, HttpClient httpClient, ObjectMapper objectMapper, @Nullable Tracer tracer) { ... }
+       public GeminiAiModelClient(GeminiProperties aiModelConfig, HttpClient httpClient, ObjectMapper objectMapper, @Nullable Tracer tracer) { ... }
    ```
 
 2. **Span Lifecycle & Naming:**

@@ -17,7 +17,7 @@ import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-import vn.danang.polaris.assistant.config.AssistantAiProperties;
+import vn.danang.polaris.assistant.config.GeminiProperties;
 import vn.danang.polaris.assistant.entity.AssistantMessage;
 import vn.danang.polaris.assistant.entity.MessageRole;
 
@@ -28,13 +28,13 @@ import vn.danang.polaris.assistant.entity.MessageRole;
 class GeminiAiModelClientModelCallTest {
 
     private HttpClient httpClient;
-    private AssistantAiProperties properties;
+    private GeminiProperties properties;
     private GeminiAiModelClient client;
 
     @BeforeEach
     void setUp() {
         httpClient = mock(HttpClient.class);
-        properties = new AssistantAiProperties();
+        properties = new GeminiProperties();
         properties.setApiKey("test-valid-api-key");
         properties.setModel("gemini-3.6-flash");
         client = new GeminiAiModelClient(properties, httpClient, new ObjectMapper().findAndRegisterModules());

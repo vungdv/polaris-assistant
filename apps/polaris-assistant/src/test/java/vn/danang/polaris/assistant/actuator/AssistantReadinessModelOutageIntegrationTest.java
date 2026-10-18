@@ -100,9 +100,9 @@ class AssistantReadinessModelOutageIntegrationTest {
         registry.add("management.health.typeSafe.enabled", () -> true);
         registry.add("management.health.polarisMcp.enabled", () -> true);
 
-        registry.add("polaris.ai.base-url", upstream::baseUrl);
-        registry.add("polaris.ai.api-key", () -> "test-wiremock-api-key");
-        registry.add("polaris.ai.model", () -> "gemini-3.6-flash");
+        registry.add("polaris.ai.gemini.base-url", upstream::baseUrl);
+        registry.add("polaris.ai.gemini.api-key", () -> "test-wiremock-api-key");
+        registry.add("polaris.ai.gemini.model", () -> "gemini-3.6-flash");
         // port 1 refuses connections: TypeSafe is unreachable
         registry.add("polaris.typesafe.base-url", () -> "http://127.0.0.1:1");
         registry.add("polaris.mcp.core.url", () -> upstream.baseUrl() + "/mcp");

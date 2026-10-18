@@ -25,20 +25,20 @@ import static org.mockito.Mockito.when;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import io.modelcontextprotocol.spec.McpSchema.Tool;
-import vn.danang.polaris.assistant.config.AssistantAiProperties;
+import vn.danang.polaris.assistant.config.GeminiProperties;
 import vn.danang.polaris.assistant.entity.AssistantMessage;
 import vn.danang.polaris.assistant.entity.MessageRole;
 
 class GeminiAiModelClientTest {
 
-    private AssistantAiProperties properties;
+    private GeminiProperties properties;
     private HttpClient httpClient;
     private ObjectMapper objectMapper;
     private GeminiAiModelClient client;
 
     @BeforeEach
     void setUp() {
-        properties = new AssistantAiProperties();
+        properties = new GeminiProperties();
         httpClient = mock(HttpClient.class);
         objectMapper = new ObjectMapper().findAndRegisterModules();
         client = new GeminiAiModelClient(properties, httpClient, objectMapper);
@@ -386,7 +386,7 @@ class GeminiAiModelClientTest {
 
             assertThatThrownBy(() -> client.chat(List.of(createUserMessage("Hello Polaris!"))))
                     .isInstanceOf(IllegalArgumentException.class)
-                    .hasMessage("Live AI Model key is not configured. Set GEMINI_API_KEY or polaris.ai.api-key to connect to live Gemini.");
+                    .hasMessage("Live AI Model key is not configured. Set GEMINI_API_KEY or polaris.ai.gemini.api-key to connect to live Gemini.");
 
             try {
                 verify(httpClient, never()).send(any(), any());
