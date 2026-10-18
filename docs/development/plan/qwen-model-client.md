@@ -148,8 +148,8 @@ Slices run top to bottom; only the `execute-plan` coordinator edits this table.
 |:--|:--|:--|:--|:--|:--|:--|:--|
 | 1 | S0a | Properties and config move | done | | feat/qwen-s0a-properties | [#22](https://github.com/vungdv/polaris-assistant/pull/22) | Merged despite red smoke test (already red on main) |
 | 2 | S0b | Delegator and resilience generalisation | done | | feat/qwen-s0b-delegator | [#23](https://github.com/vungdv/polaris-assistant/pull/23) | Merged; smoke test red with the same 5 failures as main |
-| 3 | S1 | Qwen client and selection | approved | §7.9 decided (b) on 2026-10-18; met | feat/qwen-s1-client | [#25](https://github.com/vungdv/polaris-assistant/pull/25) | |
-| 4 | S2 | Qwen resilience | todo | | | | |
+| 3 | S1 | Qwen client and selection | done | §7.9 decided (b) on 2026-10-18; met | feat/qwen-s1-client | [#25](https://github.com/vungdv/polaris-assistant/pull/25) | |
+| 4 | S2 | Qwen resilience | in-progress | | | | |
 | 5 | S3 | Qwen health | todo | | | | |
 
 ## 8. Spike results
