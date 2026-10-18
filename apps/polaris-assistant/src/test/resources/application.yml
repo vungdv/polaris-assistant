@@ -42,6 +42,8 @@ management:
     # exercising a plain, dependency-free health surface.
     gemini:
       enabled: false
+    qwen:
+      enabled: false
     typeSafe:
       enabled: false
     polarisMcp:

@@ -7,6 +7,7 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.health.autoconfigure.contributor.ConditionalOnEnabledHealthIndicator;
 import org.springframework.boot.health.contributor.Health;
 import org.springframework.boot.health.contributor.HealthIndicator;
@@ -29,6 +30,7 @@ import vn.danang.polaris.assistant.config.GeminiProperties;
  * that boot the full application context without real AI credentials or network egress.
  */
 @Component("gemini")
+@ConditionalOnProperty(name = "polaris.ai.provider", havingValue = "gemini", matchIfMissing = true)
 @ConditionalOnEnabledHealthIndicator("gemini")
 public class GeminiHealthIndicator implements HealthIndicator {
 

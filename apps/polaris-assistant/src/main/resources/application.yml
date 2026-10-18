@@ -145,6 +145,7 @@ management:
       # Readiness: db, polarisMcp (required for every endpoint).
       # Not in readiness, shown on /actuator/health only:
       #   gemini   - required for chat; an outage returns 503 Problem Details
+      #   qwen     - only when polaris.ai.provider=qwen (replaces gemini); a local Ollama outage must not restart the pod
       #   typeSafe - optional; an outage degrades intent classification to general.conversation
       #   circuitBreakers - state of the gemini and typeSafe breakers (an open breaker doesn't change the aggregate)
       group:
