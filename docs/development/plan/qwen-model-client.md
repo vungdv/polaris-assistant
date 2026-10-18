@@ -146,7 +146,7 @@ Slices run top to bottom; only the `execute-plan` coordinator edits this table.
 
 | # | Slice | Title | Status | External | Branch | PR | Notes |
 |:--|:--|:--|:--|:--|:--|:--|:--|
-| 1 | S0a | Properties and config move | todo | | | | |
+| 1 | S0a | Properties and config move | in-progress | | | | |
 | 2 | S0b | Delegator and resilience generalisation | todo | | | | |
 | 3 | S1 | Qwen client and selection | todo | §7.9 decision gate must be settled before merge | | | |
 | 4 | S2 | Qwen resilience | todo | | | | |
