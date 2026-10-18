@@ -150,7 +150,7 @@ Slices run top to bottom; only the `execute-plan` coordinator edits this table.
 | 2 | S0b | Delegator and resilience generalisation | done | | feat/qwen-s0b-delegator | [#23](https://github.com/vungdv/polaris-assistant/pull/23) | Merged; smoke test red with the same 5 failures as main |
 | 3 | S1 | Qwen client and selection | done | §7.9 decided (b) on 2026-10-18; met | feat/qwen-s1-client | [#25](https://github.com/vungdv/polaris-assistant/pull/25) | |
 | 4 | S2 | Qwen resilience | done | | feat/qwen-s2-resilience | [#26](https://github.com/vungdv/polaris-assistant/pull/26) | |
-| 5 | S3 | Qwen health | approved | | feat/qwen-s3-health | [#27](https://github.com/vungdv/polaris-assistant/pull/27) | |
+| 5 | S3 | Qwen health | done | | feat/qwen-s3-health | [#27](https://github.com/vungdv/polaris-assistant/pull/27) | |
 
 ## 8. Spike results
 
