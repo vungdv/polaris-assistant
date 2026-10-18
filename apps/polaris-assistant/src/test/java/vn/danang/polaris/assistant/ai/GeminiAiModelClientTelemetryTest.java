@@ -29,7 +29,7 @@ import io.opentelemetry.api.trace.SpanKind;
 import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.sdk.metrics.data.HistogramPointData;
 import io.opentelemetry.sdk.trace.data.SpanData;
-import vn.danang.polaris.assistant.config.AssistantAiProperties;
+import vn.danang.polaris.assistant.config.GeminiProperties;
 import vn.danang.polaris.assistant.entity.AssistantMessage;
 import vn.danang.polaris.assistant.entity.MessageRole;
 import vn.danang.polaris.assistant.observability.genai.InMemoryGenAiTelemetry;
@@ -57,14 +57,14 @@ class GeminiAiModelClientTelemetryTest {
 
     private InMemoryGenAiTelemetry telemetry;
     private HttpClient httpClient;
-    private AssistantAiProperties properties;
+    private GeminiProperties properties;
     private GeminiAiModelClient client;
 
     @BeforeEach
     void setUp() {
         telemetry = new InMemoryGenAiTelemetry();
         httpClient = mock(HttpClient.class);
-        properties = new AssistantAiProperties();
+        properties = new GeminiProperties();
         properties.setApiKey("test-valid-api-key");
         properties.setModel("gemini-3.6-flash");
         client = telemetry.observed(new GeminiAiModelClient(properties, httpClient, new ObjectMapper().findAndRegisterModules()));
