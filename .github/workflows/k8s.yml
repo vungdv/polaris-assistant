@@ -25,6 +25,8 @@ jobs:
     - uses: actions/checkout@v7
     - name: Lint scripts
       run: shellcheck -x scripts/k8s/*.sh
+    - name: Test the model stub
+      run: python3 -m unittest discover -s deploy/k8s/overlays/ci/model-stub -v
     - name: Validate rendered manifests (kustomize + kubeconform) and Helm values
       run: make k8s-validate
 
@@ -33,19 +35,18 @@ jobs:
     needs: validate
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    env:
+      K8S_OVERLAY: ${{ github.workspace }}/deploy/k8s/overlays/ci
     steps:
     - uses: actions/checkout@v7
-    # The untracked env file the cluster's Secrets come from (TR-K3), with the assistant's model API keys (K9) from the
-    # repository secrets. The values reach the file through environment variables, never the command line; the file is
-    # git-ignored and lives only on the runner.
-    - name: Write deploy/k8s/.env.local from repository secrets
-      env:
-        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
+    # The untracked env file the cluster's Secrets come from (TR-K3). The assistant's model APIs are replaced by
+    # overlays/ci's model-stub, so the model keys are placeholders: the assistant only needs them non-blank, and the live
+    # APIs' quota can't fail the chat checks. The file is git-ignored and lives only on the runner.
+    - name: Write deploy/k8s/.env.local
       run: |
         umask 077
-        printf 'GEMINI_API_KEY=%s\nTYPESAFE_API_KEY=%s\n' "$GEMINI_API_KEY" "$TYPESAFE_API_KEY" > deploy/k8s/.env.local
-    - name: Create cluster and apply overlays/local
+        printf 'GEMINI_API_KEY=model-stub\nTYPESAFE_API_KEY=model-stub\n' > deploy/k8s/.env.local
+    - name: Create cluster and apply overlays/ci
       run: make k8s-up
     # The three apps (K8: polaris, K9: polaris-assistant, K10: polaris-fulfilment-emulator), built from this commit and
     # loaded with `kind load` (GHCR packages are private, and PR images aren't pushed). Both polaris replicas then start
@@ -81,6 +82,7 @@ jobs:
         .tools/bin/kubectl --kubeconfig .tools/kubeconfig --context kind-polaris -n polaris logs deployment/swagger-ui --all-containers --tail=100 || true
         .tools/bin/kubectl --kubeconfig .tools/kubeconfig --context kind-polaris -n polaris describe deployments/polaris-assistant || true
         .tools/bin/kubectl --kubeconfig .tools/kubeconfig --context kind-polaris -n polaris logs -l app.kubernetes.io/name=polaris-assistant --all-containers --prefix --tail=300 || true
+        .tools/bin/kubectl --kubeconfig .tools/kubeconfig --context kind-polaris -n polaris logs deployment/model-stub --tail=100 || true
         .tools/bin/kubectl --kubeconfig .tools/kubeconfig --context kind-polaris -n polaris describe deployments/polaris-fulfilment-emulator || true
         .tools/bin/kubectl --kubeconfig .tools/kubeconfig --context kind-polaris -n polaris logs -l app.kubernetes.io/name=polaris-fulfilment-emulator --all-containers --prefix --tail=300 || true
         .tools/bin/kubectl --kubeconfig .tools/kubeconfig --context kind-polaris get nodes -o wide || true

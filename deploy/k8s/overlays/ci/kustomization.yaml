@@ -1,0 +1,34 @@
+# CI environment (`K8S_OVERLAY=deploy/k8s/overlays/ci`): overlays/local with the assistant's model APIs (Gemini, TypeSafe)
+# replaced by model-stub, so the smoke test runs the chat scenarios without a live API key or its quota. Everything else
+# is the local overlay's, so the smoke test checks the same stack.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../local
+  - model-stub
+patches:
+  - target:
+      kind: ConfigMap
+      name: polaris-assistant
+    patch: |-
+      - op: add
+        path: /data/POLARIS_AI_BASE_URL
+        value: http://model-stub.polaris.svc.cluster.local:8080
+      - op: add
+        path: /data/POLARIS_TYPESAFE_BASE_URL
+        value: http://model-stub.polaris.svc.cluster.local:8080
+  # The assistant may call the stub (its other external rule is HTTPS to public addresses only).
+  - target:
+      kind: NetworkPolicy
+      name: polaris-assistant
+    patch: |-
+      - op: add
+        path: /spec/egress/-
+        value:
+          to:
+            - podSelector:
+                matchLabels:
+                  app.kubernetes.io/name: model-stub
+          ports:
+            - protocol: TCP
+              port: 8080
