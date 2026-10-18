@@ -109,11 +109,11 @@ class AssistantTurnTimeBudgetIntegrationTest {
 
     @DynamicPropertySource
     static void modelProperties(DynamicPropertyRegistry registry) {
-        registry.add("polaris.ai.base-url", gemini::baseUrl);
-        registry.add("polaris.ai.api-key", () -> "test-wiremock-api-key");
-        registry.add("polaris.ai.model", () -> "gemini-3.6-flash");
-        registry.add("polaris.ai.timeout-seconds", () -> 10);
-        registry.add("polaris.ai.turn-deadline", TURN_DEADLINE::toString);
+        registry.add("polaris.ai.gemini.base-url", gemini::baseUrl);
+        registry.add("polaris.ai.gemini.api-key", () -> "test-wiremock-api-key");
+        registry.add("polaris.ai.gemini.model", () -> "gemini-3.6-flash");
+        registry.add("polaris.ai.gemini.timeout-seconds", () -> 10);
+        registry.add("polaris.ai.gemini.turn-deadline", TURN_DEADLINE::toString);
         registry.add("polaris.typesafe.base-url", typeSafe::baseUrl);
         registry.add("polaris.typesafe.api-key", () -> "test-wiremock-typesafe-key");
         registry.add("polaris.typesafe.timeout-seconds", () -> 1);

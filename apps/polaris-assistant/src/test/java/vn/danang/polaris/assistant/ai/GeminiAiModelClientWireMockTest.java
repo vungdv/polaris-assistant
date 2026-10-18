@@ -33,7 +33,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.modelcontextprotocol.spec.McpSchema.Tool;
-import vn.danang.polaris.assistant.config.AssistantAiProperties;
+import vn.danang.polaris.assistant.config.GeminiProperties;
 import vn.danang.polaris.assistant.entity.AssistantMessage;
 import vn.danang.polaris.assistant.entity.MessageRole;
 
@@ -50,12 +50,12 @@ class GeminiAiModelClientWireMockTest {
 
     private static final String GENERATE_CONTENT_PATH = "/v1beta/models/gemini-3.6-flash:generateContent";
 
-    private AssistantAiProperties properties;
+    private GeminiProperties properties;
     private GeminiAiModelClient client;
 
     @BeforeEach
     void setUp() {
-        properties = new AssistantAiProperties();
+        properties = new GeminiProperties();
         properties.setApiKey("test-wiremock-api-key");
         properties.setModel("gemini-3.6-flash");
         properties.setBaseUrl(wireMock.baseUrl());

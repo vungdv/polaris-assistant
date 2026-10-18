@@ -40,7 +40,7 @@ import vn.danang.polaris.assistant.ai.GeminiAiModelClient;
 import vn.danang.polaris.assistant.ai.ModelRequestContext;
 import vn.danang.polaris.assistant.ai.ModelResponse;
 import vn.danang.polaris.assistant.ai.ModelUnavailableException;
-import vn.danang.polaris.assistant.config.AssistantAiProperties;
+import vn.danang.polaris.assistant.config.GeminiProperties;
 import vn.danang.polaris.assistant.entity.AssistantMessage;
 import vn.danang.polaris.assistant.entity.MessageRole;
 
@@ -66,7 +66,7 @@ class ResilientGeminiModelClientTest {
 
     @BeforeEach
     void setUp() {
-        AssistantAiProperties properties = new AssistantAiProperties();
+        GeminiProperties properties = new GeminiProperties();
         properties.setApiKey("test-wiremock-api-key");
         properties.setModel("gemini-3.6-flash");
         properties.setBaseUrl(gemini.baseUrl());

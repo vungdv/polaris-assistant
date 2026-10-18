@@ -10,7 +10,7 @@
 # history table. (ddl-auto on a Flyway-owned database is a known risk, raised as a follow-up in the plan.)
 #
 # Lifecycle (TR-K4), with server.shutdown=graceful and a 30s shutdown phase that covers a whole chat turn
-# (polaris.ai.turn-deadline 25s; application.yml, K2):
+# (polaris.ai.gemini.turn-deadline 25s; application.yml, K2):
 #   - startupProbe gives the context (Hibernate schema update included) up to 5 minutes before liveness applies,
 #   - readiness keeps Compose's semantics: `readinessState` + `db` + `polarisMcp` only (application.yml). Gemini and
 #     TypeSafe are on /actuator/health but not in readiness, so a model outage never takes pods out of the Service,

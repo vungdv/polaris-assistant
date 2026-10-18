@@ -9,12 +9,11 @@ import lombok.Getter;
 import lombok.Setter;
 
 @Configuration
-@ConfigurationProperties(prefix = "polaris.ai")
+@ConfigurationProperties(prefix = "polaris.ai.gemini")
 @Getter
 @Setter
-public class AssistantAiProperties {
+public class GeminiProperties {
 
-    private String provider = "gemini";
     private String apiKey = "";
     private String model = "gemini-3.6-flash";
     private String baseUrl = "https://generativelanguage.googleapis.com";
