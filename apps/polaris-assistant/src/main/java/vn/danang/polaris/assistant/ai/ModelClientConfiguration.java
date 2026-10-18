@@ -11,6 +11,8 @@ import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import io.github.resilience4j.retry.RetryRegistry;
 import io.micrometer.tracing.Tracer;
 import vn.danang.polaris.assistant.config.ModelProviderProperties;
+import vn.danang.polaris.assistant.config.QwenProperties;
+import vn.danang.polaris.assistant.observability.genai.GenAiTelemetry;
 import vn.danang.polaris.assistant.resilience.ModelCircuitBreakers;
 import vn.danang.polaris.assistant.resilience.ResilientModelClient;
 
@@ -18,16 +20,29 @@ import vn.danang.polaris.assistant.resilience.ResilientModelClient;
 @Configuration
 class ModelClientConfiguration {
 
+    private static final String PROVIDER_QWEN = GenAiTelemetry.PROVIDER_QWEN;
+
     @Bean
     ResilientModelClient geminiModelClient(GeminiAiModelClient gemini, CircuitBreakerRegistry circuitBreakers,
             RetryRegistry retries, ObjectProvider<Tracer> tracer) {
         return new ResilientModelClient(ModelCircuitBreakers.GEMINI, gemini, circuitBreakers, retries, tracer);
     }
 
+    /**
+     * Qwen is registered without a breaker until the {@code qwen} breaker lands; the default provider stays Gemini.
+     *
+     * @throws IllegalStateException when the provider is unknown, or {@code qwen} has no base URL
+     */
     @Bean
     @Primary
-    DelegatingModelClient delegatingModelClient(ModelProviderProperties properties,
-            ResilientModelClient geminiModelClient) {
-        return new DelegatingModelClient(properties, Map.of(ModelCircuitBreakers.GEMINI, geminiModelClient));
+    DelegatingModelClient delegatingModelClient(ModelProviderProperties properties, QwenProperties qwen,
+            ResilientModelClient geminiModelClient, OpenAiCompatibleModelClient qwenModelClient) {
+        if (PROVIDER_QWEN.equals(properties.getProvider())
+                && (qwen.getBaseUrl() == null || qwen.getBaseUrl().isBlank())) {
+            throw new IllegalStateException(
+                    "polaris.ai.provider=qwen requires QWEN_BASE_URL (polaris.ai.qwen.base-url), for example http://localhost:11434/v1");
+        }
+        return new DelegatingModelClient(properties,
+                Map.of(ModelCircuitBreakers.GEMINI, geminiModelClient, PROVIDER_QWEN, qwenModelClient));
     }
 }

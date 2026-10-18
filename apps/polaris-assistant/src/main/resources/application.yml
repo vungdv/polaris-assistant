@@ -54,6 +54,13 @@ polaris:
       timeout-seconds: ${POLARIS_AI_TIMEOUT_SECONDS:30}
       # Budget for a whole chat turn, below the 30 s chat latency SLO; exhausted -> 503
       turn-deadline: ${POLARIS_AI_TURN_DEADLINE:25s}
+    qwen:
+      api-key: ${QWEN_API_KEY:}                  # blank is valid (Ollama)
+      model: ${QWEN_MODEL:qwen3:4b}
+      base-url: ${QWEN_BASE_URL:}                # required when provider=qwen, includes the version path: http://localhost:11434/v1
+      # qwen3:4b spends thousands of reasoning tokens per call (measured up to 88 s on a trivial prompt, 4 s + 23 s for a tool turn)
+      timeout-seconds: ${QWEN_TIMEOUT_SECONDS:120}
+      turn-deadline: ${QWEN_TURN_DEADLINE:180s}
     # Grafana AI Observability (agento11y SDK): OTel GenAI semconv spans + gen_ai.client.* metrics.
     telemetry:
       agent-version: ${AGENTO11Y_AGENT_VERSION:}

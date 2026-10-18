@@ -16,6 +16,6 @@ import lombok.Setter;
 @Setter
 public class ModelProviderProperties {
 
-    /** {@code gemini} (default) or, once registered, {@code qwen}. */
+    /** {@code gemini} (default) or {@code qwen}. */
     private String provider = "gemini";
 }
