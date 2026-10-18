@@ -146,8 +146,8 @@ Slices run top to bottom; only the `execute-plan` coordinator edits this table.
 
 | # | Slice | Title | Status | External | Branch | PR | Notes |
 |:--|:--|:--|:--|:--|:--|:--|:--|
-| 1 | S0a | Properties and config move | approved | | feat/qwen-s0a-properties | [#22](https://github.com/vungdv/polaris-assistant/pull/22) | |
-| 2 | S0b | Delegator and resilience generalisation | todo | | | | |
+| 1 | S0a | Properties and config move | done | | feat/qwen-s0a-properties | [#22](https://github.com/vungdv/polaris-assistant/pull/22) | Merged despite red smoke test (already red on main) |
+| 2 | S0b | Delegator and resilience generalisation | in-progress | | | | |
 | 3 | S1 | Qwen client and selection | todo | §7.9 decision gate must be settled before merge | | | |
 | 4 | S2 | Qwen resilience | todo | | | | |
 | 5 | S3 | Qwen health | todo | | | | |
