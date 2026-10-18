@@ -1,5 +1,6 @@
 package vn.danang.polaris.assistant.ai;
 
+import java.time.Duration;
 import java.util.List;
 
 import io.modelcontextprotocol.spec.McpSchema.Tool;
@@ -9,6 +10,13 @@ import vn.danang.polaris.assistant.entity.AssistantMessage;
  * Contract for forwarding conversation messages to an external Foundation AI Model.
  */
 public interface AssistantModelClient {
+
+    /**
+     * Total time budget of one chat turn on this provider, across all its model calls and tool rounds.
+     *
+     * @return the provider's configured turn deadline
+     */
+    Duration turnDeadline();
 
     /**
      * Send conversation messages to the AI Model and receive its text response.

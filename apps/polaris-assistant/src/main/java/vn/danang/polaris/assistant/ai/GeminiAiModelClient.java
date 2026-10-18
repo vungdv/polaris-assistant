@@ -72,6 +72,11 @@ public class GeminiAiModelClient implements AssistantModelClient {
     }
 
     @Override
+    public Duration turnDeadline() {
+        return aiModelConfig.getTurnDeadline();
+    }
+
+    @Override
     public String chat(List<AssistantMessage> messages) {
         return generateResponse(messages, List.of()).text();
     }
