@@ -9,9 +9,6 @@ import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.context.annotation.Primary;
-import org.springframework.stereotype.Component;
 
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
@@ -23,7 +20,6 @@ import io.github.resilience4j.retry.RetryRegistry;
 import io.micrometer.tracing.Tracer;
 import io.modelcontextprotocol.spec.McpSchema.Tool;
 import vn.danang.polaris.assistant.ai.AssistantModelClient;
-import vn.danang.polaris.assistant.ai.GeminiAiModelClient;
 import vn.danang.polaris.assistant.ai.ModelFailures;
 import vn.danang.polaris.assistant.ai.ModelRequestContext;
 import vn.danang.polaris.assistant.ai.ModelResponse;
@@ -31,38 +27,43 @@ import vn.danang.polaris.assistant.ai.ModelUnavailableException;
 import vn.danang.polaris.assistant.entity.AssistantMessage;
 
 /**
- * Guards {@link GeminiAiModelClient} with the {@value ModelCircuitBreakers#GEMINI} circuit breaker and, inside it,
- * the {@value ModelCircuitBreakers#GEMINI} retry ({@code resilience4j.retry.configs.gemini}).
+ * Guards one provider's {@link AssistantModelClient} with the circuit breaker named after the provider (for example
+ * {@value ModelCircuitBreakers#GEMINI}) and, inside it, the retry of the same name
+ * ({@code resilience4j.retry.configs.<provider>}).
  * <p>
  * Retries only {@link ModelFailures#isRetryable retryable} failures, waits the provider's {@code Retry-After}
  * when it sent one (otherwise the configured backoff), and never when that wait would end past the turn's
  * deadline. While the breaker is open, calls fail at once with a {@code Retry-After} of the time until it
  * half-opens.
  */
-@Component
-@Primary
-public class ResilientGeminiModelClient implements AssistantModelClient {
+public class ResilientModelClient implements AssistantModelClient {
 
-    private static final Logger log = LoggerFactory.getLogger(ResilientGeminiModelClient.class);
+    private static final Logger log = LoggerFactory.getLogger(ResilientModelClient.class);
 
+    private final String provider;
     private final AssistantModelClient delegate;
     private final CircuitBreaker circuitBreaker;
     private final Retry retry;
     private final CircuitBreakerObserver observer;
 
-    @Autowired
-    public ResilientGeminiModelClient(GeminiAiModelClient delegate, CircuitBreakerRegistry circuitBreakers,
+    public ResilientModelClient(String provider, AssistantModelClient delegate, CircuitBreakerRegistry circuitBreakers,
             RetryRegistry retries, ObjectProvider<Tracer> tracer) {
-        this(delegate, circuitBreakers.circuitBreaker(ModelCircuitBreakers.GEMINI), retries, tracer);
+        this(provider, delegate, circuitBreakers.circuitBreaker(provider), retries, tracer);
     }
 
-    ResilientGeminiModelClient(AssistantModelClient delegate, CircuitBreaker circuitBreaker, RetryRegistry retries,
-            ObjectProvider<Tracer> tracer) {
+    ResilientModelClient(String provider, AssistantModelClient delegate, CircuitBreaker circuitBreaker,
+            RetryRegistry retries, ObjectProvider<Tracer> tracer) {
+        this.provider = provider;
         this.delegate = delegate;
         this.circuitBreaker = circuitBreaker;
-        RetryConfig configured = retries.getConfiguration(ModelCircuitBreakers.GEMINI).orElseGet(retries::getDefaultConfig);
-        this.retry = retries.retry(ModelCircuitBreakers.GEMINI, retryConfig(configured));
+        RetryConfig configured = retries.getConfiguration(provider).orElseGet(retries::getDefaultConfig);
+        this.retry = retries.retry(provider, retryConfig(configured));
         this.observer = new CircuitBreakerObserver(circuitBreaker, tracer);
+    }
+
+    @Override
+    public Duration turnDeadline() {
+        return delegate.turnDeadline();
     }
 
     @Override
@@ -90,8 +91,9 @@ public class ResilientGeminiModelClient implements AssistantModelClient {
             });
         } catch (CallNotPermittedException e) {
             Duration retryAfter = observer.untilHalfOpen();
-            log.warn("Gemini circuit breaker is {}; failing fast, retry after {}", circuitBreaker.getState(), retryAfter);
-            throw new ModelUnavailableException("Gemini circuit breaker is open", e, retryAfter);
+            log.warn("{} circuit breaker is {}; failing fast, retry after {}", provider, circuitBreaker.getState(),
+                    retryAfter);
+            throw new ModelUnavailableException(provider + " circuit breaker is open", e, retryAfter);
         } finally {
             observer.tagState();
         }

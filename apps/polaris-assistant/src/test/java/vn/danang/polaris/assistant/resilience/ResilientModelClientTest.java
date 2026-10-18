@@ -45,10 +45,10 @@ import vn.danang.polaris.assistant.entity.AssistantMessage;
 import vn.danang.polaris.assistant.entity.MessageRole;
 
 /**
- * The real {@link GeminiAiModelClient} behind {@link ResilientGeminiModelClient}, against WireMock fault injection,
+ * The real {@link GeminiAiModelClient} behind {@link ResilientModelClient}, against WireMock fault injection,
  * with small breaker and retry settings (window of 4 calls, 50 ms backoff).
  */
-class ResilientGeminiModelClientTest {
+class ResilientModelClientTest {
 
     @RegisterExtension
     static WireMockExtension gemini = WireMockExtension.newInstance().options(wireMockConfig().dynamicPort()).build();
@@ -62,7 +62,7 @@ class ResilientGeminiModelClientTest {
     private CircuitBreaker circuitBreaker;
     private Tracer tracer;
     private Span span;
-    private ResilientGeminiModelClient client;
+    private ResilientModelClient client;
 
     @BeforeEach
     void setUp() {
@@ -91,8 +91,14 @@ class ResilientGeminiModelClientTest {
         span = mock(Span.class);
         when(tracer.currentSpan()).thenReturn(span);
 
-        client = new ResilientGeminiModelClient(new GeminiAiModelClient(properties), circuitBreaker, retries,
+        client = new ResilientModelClient(ModelCircuitBreakers.GEMINI, new GeminiAiModelClient(properties), circuitBreaker, retries,
                 new StaticListableBeanFactory(Map.of("tracer", tracer)).getBeanProvider(Tracer.class));
+    }
+
+    @Test
+    @DisplayName("When asking for the turn deadline, then the wrapped client's value is returned")
+    void forwards_the_turn_deadline() {
+        assertThat(client.turnDeadline()).isEqualTo(new GeminiProperties().getTurnDeadline());
     }
 
     @Test

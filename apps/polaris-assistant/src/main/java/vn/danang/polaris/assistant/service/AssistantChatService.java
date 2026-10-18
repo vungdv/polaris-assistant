@@ -21,7 +21,6 @@ import io.micrometer.tracing.Span;
 import io.micrometer.tracing.Tracer;
 import io.modelcontextprotocol.spec.McpSchema.Tool;
 import jakarta.annotation.Nullable;
-import vn.danang.polaris.assistant.config.GeminiProperties;
 import vn.danang.polaris.assistant.dto.ChatMessageRequest;
 import vn.danang.polaris.assistant.dto.ChatMessageResponse;
 import vn.danang.polaris.assistant.dto.ChatWidget;
@@ -78,8 +77,7 @@ public class AssistantChatService {
             IntentResolutionFacade intentResolutionFacade,
             SessionStore sessionStore,
             ObjectProvider<ObjectMapper> objectMapperProvider,
-            AssistantOutcomeMetrics outcomeMetrics,
-            GeminiProperties aiProperties) {
+            AssistantOutcomeMetrics outcomeMetrics) {
         this.modelClient = Objects.requireNonNull(modelClient, "modelClient must not be null");
         this.tracer = Optional.ofNullable(tracerProvider).map(ObjectProvider::getIfAvailable);
         this.intentResolutionFacade = Objects.requireNonNull(intentResolutionFacade, "intentResolutionFacade must not be null");
@@ -88,7 +86,7 @@ public class AssistantChatService {
                 ? objectMapperProvider.getIfAvailable()
                 : new ObjectMapper().findAndRegisterModules();
         this.outcomeMetrics = Objects.requireNonNull(outcomeMetrics, "outcomeMetrics must not be null");
-        this.turnDeadline = Objects.requireNonNull(aiProperties.getTurnDeadline(), "turnDeadline must not be null");
+        this.turnDeadline = Objects.requireNonNull(modelClient.turnDeadline(), "turnDeadline must not be null");
     }
 
     public AssistantChatService(
@@ -108,7 +106,7 @@ public class AssistantChatService {
             @Nullable ObjectMapper objectMapper,
             AssistantOutcomeMetrics outcomeMetrics) {
         this(modelClient, tracerProvider, intentResolutionFacade, sessionStore, objectMapper, outcomeMetrics,
-                new GeminiProperties().getTurnDeadline());
+                modelClient.turnDeadline());
     }
 
     public AssistantChatService(
