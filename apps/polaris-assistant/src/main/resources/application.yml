@@ -90,7 +90,7 @@ polaris:
         fallback-retry-interval: ${POLARIS_ASSISTANT_INTENT_REDIS_FALLBACK_RETRY_INTERVAL:5s}
         seed-if-missing: ${POLARIS_ASSISTANT_INTENT_REDIS_SEED_IF_MISSING:true}
 
-# Circuit breaker per AI model provider; retry for Gemini only (it runs inside the breaker)
+# Circuit breaker per AI model provider; retry per provider (it runs inside the breaker)
 resilience4j:
   circuitbreaker:
     configs:
@@ -104,6 +104,8 @@ resilience4j:
     instances:
       gemini:
         base-config: default
+      qwen:
+        base-config: default
       typeSafe:
         base-config: default
         # TypeSafe is called on every turn, so judge it over recent time rather than a call count
@@ -114,6 +116,13 @@ resilience4j:
       gemini:
         max-attempts: ${POLARIS_AI_RETRY_MAX_ATTEMPTS:2}
         wait-duration: ${POLARIS_AI_RETRY_WAIT:500ms}
+        enable-exponential-backoff: true
+        exponential-backoff-multiplier: 2
+        enable-randomized-wait: true
+        randomized-wait-factor: 0.5
+      qwen:
+        max-attempts: ${QWEN_RETRY_MAX_ATTEMPTS:2}
+        wait-duration: ${QWEN_RETRY_WAIT:500ms}
         enable-exponential-backoff: true
         exponential-backoff-multiplier: 2
         enable-randomized-wait: true
