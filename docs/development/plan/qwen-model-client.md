@@ -77,8 +77,8 @@ polaris:
       api-key: ${QWEN_API_KEY:}                  # blank is valid (Ollama)
       model: ${QWEN_MODEL:qwen3:4b}              # verified on Ollama; hosted model names unverified
       base-url: ${QWEN_BASE_URL:}                # required when provider=qwen, includes version path: http://localhost:11434/v1
-      timeout-seconds: ${QWEN_TIMEOUT_SECONDS:60}  # local small models are slower
-      turn-deadline: ${QWEN_TURN_DEADLINE:25s}
+      timeout-seconds: ${QWEN_TIMEOUT_SECONDS:60}  # local small models are slower; final value set in S1 (§7.9)
+      turn-deadline: ${QWEN_TURN_DEADLINE:25s}     # to be raised in S1 (§7.9)
       # system-prompt: default in QwenProperties (duplicated from Gemini on purpose, see §7.8)
 ```
 
@@ -138,7 +138,7 @@ Status: **Proposed**, pending reviewer sign-off.
    - (b) a larger default `QWEN_TURN_DEADLINE` and `timeout-seconds` for Qwen only;
    - (c) a smaller or non-thinking model (`qwen2.5:3b`, per `scripts/ollama.sh`).
 
-   Proposed default: try (a) first, fall back to (b). Not decided; reviewer to confirm.
+   **Decided 2026-10-18: (b).** Qwen gets its own larger default `QWEN_TURN_DEADLINE` and `timeout-seconds`; the Gemini defaults are unchanged. The S1 worker picks the values from measured `qwen3:4b` latency on the spike hardware and states them in the PR for review. (a) and (c) are not pursued in this plan.
 
 ### Slice Tracker
 
@@ -148,7 +148,7 @@ Slices run top to bottom; only the `execute-plan` coordinator edits this table.
 |:--|:--|:--|:--|:--|:--|:--|:--|
 | 1 | S0a | Properties and config move | done | | feat/qwen-s0a-properties | [#22](https://github.com/vungdv/polaris-assistant/pull/22) | Merged despite red smoke test (already red on main) |
 | 2 | S0b | Delegator and resilience generalisation | done | | feat/qwen-s0b-delegator | [#23](https://github.com/vungdv/polaris-assistant/pull/23) | Merged; smoke test red with the same 5 failures as main |
-| 3 | S1 | Qwen client and selection | todo | §7.9 decision gate must be settled before merge | | | |
+| 3 | S1 | Qwen client and selection | todo | §7.9 decided (b) on 2026-10-18; met | | | |
 | 4 | S2 | Qwen resilience | todo | | | | |
 | 5 | S3 | Qwen health | todo | | | | |
 
@@ -184,3 +184,9 @@ curl -s localhost:11434/v1/chat/completions -H 'Content-Type: application/json' 
 #   hosted endpoint:  curl -s "$QWEN_BASE_URL/chat/completions" -H "Authorization: Bearer $QWEN_API_KEY" ...
 #   error shapes:     request with a bad model name -> expect 404/400 body; stop Ollama -> connection refused
 ```
+
+## Change Log
+
+| Date | Change | Reason | Slices |
+|:--|:--|:--|:--|
+| 2026-10-18 | §7.9 decided: (b) larger Qwen-only `QWEN_TURN_DEADLINE` and `timeout-seconds` | User decision at the S1 gate; thinking-disable (a) and non-thinking model (c) not pursued | S1 |
