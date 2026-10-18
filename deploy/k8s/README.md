@@ -339,8 +339,10 @@ operator's post-import restart has finished.
 - **Secret.** `make k8s-up` writes Secret `polaris-assistant` from the non-empty `GEMINI_API_KEY`, `TYPESAFE_API_KEY`
   and `AGENTO11Y_*` keys of `deploy/k8s/.env.local` (`K8S_ENV_FILE`) on every run. A key left empty is absent, so
   `application.yml`'s default applies (`AGENTO11Y_PROTOCOL=none`; without `GEMINI_API_KEY` the pods stay ready but chat
-  answers 503). When the Secret changes, `make k8s-up` restarts the Deployment. CI writes the env file from the
-  repository secrets `GEMINI_API_KEY` and `TYPESAFE_API_KEY`.
+  answers 503). When the Secret changes, `make k8s-up` restarts the Deployment. CI deploys `overlays/ci`
+  (`K8S_OVERLAY`), which is `overlays/local` plus `model-stub` (`overlays/ci/model-stub/stub.py`), a stand-in for the Gemini
+  and TypeSafe APIs that answers the chat scenarios deterministically, so the smoke test needs no live key or quota; the
+  env file there holds placeholder keys. To run the chat against the live APIs, use `overlays/local` with real keys.
 - **Image.** As for polaris: `make k8s-images APPS=polaris-assistant`, then `make k8s-up` again.
 - **Lifecycle (TR-K4).** The 30s graceful-shutdown phase covers a whole chat turn (25s turn deadline). With the 10s
   `preStop` sleep, `terminationGracePeriodSeconds` is 50 (10 + 30 + 10s margin), so a rolling restart doesn't cut an

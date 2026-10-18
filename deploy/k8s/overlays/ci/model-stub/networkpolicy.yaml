@@ -1,0 +1,22 @@
+# The stub is called by the assistant only and calls nothing (default-deny covers its egress).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: model-stub
+  labels:
+    app.kubernetes.io/name: model-stub
+    app.kubernetes.io/part-of: polaris
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: model-stub
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: polaris-assistant
+      ports:
+        - protocol: TCP
+          port: 8080

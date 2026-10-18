@@ -1,0 +1,61 @@
+# Stand-in for the Gemini and TypeSafe APIs (stub.py, mounted from the ConfigMap model-stub). The python image is pinned
+# by its multi-arch index digest. It runs under Pod Security `restricted`: non-root, read-only root filesystem.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: model-stub
+  labels:
+    app.kubernetes.io/name: model-stub
+    app.kubernetes.io/part-of: polaris
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: model-stub
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: model-stub
+        app.kubernetes.io/part-of: polaris
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: model-stub
+          image: python:3.13-alpine@sha256:2d9aefe2fef018a7eb2c13064c89c71929800fd2e5dccdbf52ea5da5bb8d929a
+          command: ["python", "-u", "/app/stub.py"]
+          env:
+            - name: PYTHONDONTWRITEBYTECODE
+              value: "1"
+          ports:
+            - name: http
+              containerPort: 8080
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          readinessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+          volumeMounts:
+            - name: app
+              mountPath: /app
+              readOnly: true
+      volumes:
+        - name: app
+          configMap:
+            name: model-stub
