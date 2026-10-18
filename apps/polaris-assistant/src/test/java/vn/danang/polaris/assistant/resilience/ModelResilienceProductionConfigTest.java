@@ -39,7 +39,7 @@ class ModelResilienceProductionConfigTest {
                 .withInitializer(context -> context.getEnvironment().getPropertySources().addFirst(main))
                 .run(context -> {
                     CircuitBreakerRegistry breakers = context.getBean(CircuitBreakerRegistry.class);
-                    for (String name : new String[] {ModelCircuitBreakers.GEMINI, ModelCircuitBreakers.TYPESAFE}) {
+                    for (String name : new String[] {ModelCircuitBreakers.GEMINI, ModelCircuitBreakers.QWEN, ModelCircuitBreakers.TYPESAFE}) {
                         CircuitBreakerConfig config = breakers.circuitBreaker(name).getCircuitBreakerConfig();
                         assertThat(config.getMinimumNumberOfCalls()).as(name).isEqualTo(10);
                         assertThat(config.getFailureRateThreshold()).as(name).isEqualTo(50f);
@@ -54,11 +54,13 @@ class ModelResilienceProductionConfigTest {
                     assertThat(typeSafe.getSlidingWindowType()).isEqualTo(SlidingWindowType.TIME_BASED);
                     assertThat(typeSafe.getSlidingWindowSize()).isEqualTo(60);
 
-                    RetryConfig retry = context.getBean(RetryRegistry.class).getConfiguration(ModelCircuitBreakers.GEMINI)
-                            .orElseThrow();
-                    assertThat(retry.getMaxAttempts()).isEqualTo(2);
-                    long firstWait = retry.<Object>getIntervalBiFunction().apply(1, Either.left(new RuntimeException()));
-                    assertThat(Duration.ofMillis(firstWait)).isBetween(Duration.ofMillis(250), Duration.ofMillis(750));
+                    for (String name : new String[] {ModelCircuitBreakers.GEMINI, ModelCircuitBreakers.QWEN}) {
+                        RetryConfig retry = context.getBean(RetryRegistry.class).getConfiguration(name).orElseThrow();
+                        assertThat(retry.getMaxAttempts()).as(name).isEqualTo(2);
+                        long firstWait = retry.<Object>getIntervalBiFunction().apply(1, Either.left(new RuntimeException()));
+                        assertThat(Duration.ofMillis(firstWait)).as(name)
+                                .isBetween(Duration.ofMillis(250), Duration.ofMillis(750));
+                    }
                 });
     }
 }

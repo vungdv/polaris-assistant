@@ -65,6 +65,8 @@ resilience4j:
     instances:
       gemini:
         base-config: default
+      qwen:
+        base-config: default
       typeSafe:
         base-config: default
         sliding-window-type: TIME_BASED
@@ -72,6 +74,13 @@ resilience4j:
   retry:
     configs:
       gemini:
+        max-attempts: 2
+        wait-duration: 50ms
+        enable-exponential-backoff: true
+        exponential-backoff-multiplier: 2
+        enable-randomized-wait: true
+        randomized-wait-factor: 0.5
+      qwen:
         max-attempts: 2
         wait-duration: 50ms
         enable-exponential-backoff: true

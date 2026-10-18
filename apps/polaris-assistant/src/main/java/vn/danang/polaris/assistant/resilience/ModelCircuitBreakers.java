@@ -24,6 +24,7 @@ import vn.danang.polaris.assistant.ai.ModelFailures;
 public class ModelCircuitBreakers {
 
     public static final String GEMINI = "gemini";
+    public static final String QWEN = "qwen";
     public static final String TYPESAFE = "typeSafe";
 
     static final String CIRCUIT_OPEN = "CIRCUIT_OPEN";
@@ -35,6 +36,11 @@ public class ModelCircuitBreakers {
     }
 
     @Bean
+    CircuitBreakerConfigCustomizer qwenCircuitBreakerCustomizer() {
+        return recordOutagesOnly(QWEN);
+    }
+
+    @Bean
     CircuitBreakerConfigCustomizer typeSafeCircuitBreakerCustomizer() {
         return recordOutagesOnly(TYPESAFE);
     }
@@ -43,6 +49,7 @@ public class ModelCircuitBreakers {
     CompositeHealthContributor circuitBreakersHealthContributor(CircuitBreakerRegistry registry) {
         return CompositeHealthContributor.fromMap(Map.of(
                 GEMINI, stateIndicator(registry.circuitBreaker(GEMINI)),
+                QWEN, stateIndicator(registry.circuitBreaker(QWEN)),
                 TYPESAFE, stateIndicator(registry.circuitBreaker(TYPESAFE))));
     }
 
