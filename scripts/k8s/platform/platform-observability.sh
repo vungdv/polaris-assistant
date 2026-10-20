@@ -24,5 +24,12 @@ install_otel_agent() {
     --values "$PLATFORM_DIR/otel-agent/values.yaml"
 }
 
+# node-exporter exposes each node's host metrics to Prometheus for the Kubernetes dashboard (platform/node-exporter).
+install_node_exporter() {
+  helm_install "$NODE_EXPORTER_RELEASE" "$OTEL_NAMESPACE" "$NODE_EXPORTER_CHART" "$NODE_EXPORTER_VERSION" \
+    --repo "$PROMETHEUS_REPO" --values "$PLATFORM_DIR/node-exporter/values.yaml"
+}
+
 install_otel_collector
 install_otel_agent
+install_node_exporter

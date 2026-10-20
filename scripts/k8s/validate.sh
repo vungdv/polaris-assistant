@@ -66,6 +66,7 @@ render_chart "$BARMAN_CLOUD_CHART" "$BARMAN_CLOUD_VERSION" "$K8S_DIR/platform/ba
 render_chart --repo "$SEAWEEDFS_REPO" "$SEAWEEDFS_CHART" "$SEAWEEDFS_VERSION" "$K8S_DIR/platform/object-store/values.yaml"
 # K12: the local LGTM stack.
 render_chart --repo "$PROMETHEUS_REPO" "$PROMETHEUS_CHART" "$PROMETHEUS_VERSION" "$K8S_DIR/platform/prometheus/values.yaml"
+render_chart --repo "$PROMETHEUS_REPO" "$NODE_EXPORTER_CHART" "$NODE_EXPORTER_VERSION" "$K8S_DIR/platform/node-exporter/values.yaml"
 render_chart --repo "$GRAFANA_COMMUNITY_REPO" "$LOKI_CHART" "$LOKI_VERSION" "$K8S_DIR/platform/loki/values.yaml"
 render_chart --repo "$GRAFANA_COMMUNITY_REPO" "$TEMPO_CHART" "$TEMPO_VERSION" "$K8S_DIR/platform/tempo/values.yaml"
 render_chart --repo "$GRAFANA_COMMUNITY_REPO" "$GRAFANA_CHART" "$GRAFANA_VERSION" "$K8S_DIR/platform/grafana/values.yaml"
