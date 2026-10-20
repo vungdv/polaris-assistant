@@ -393,6 +393,25 @@ class AssistantChatServiceTest {
         }
 
         @Test
+        @DisplayName("Given active tracer, when intent is resolved, then tags intent id, confidence and threshold on active span")
+        void tags_resolved_intent_on_active_span_when_tracer_is_present() {
+            Span span = mock(Span.class);
+            Tracer.SpanInScope spanInScope = mock(Tracer.SpanInScope.class);
+            Tracer tracer = mockTracerSetup(span, spanInScope);
+            AssistantChatService serviceWithTracer = createChatService(modelClient, tracer, intentResolutionFacade);
+            when(intentResolutionFacade.resolve(anyString(), anyList()))
+                    .thenReturn(new ResolvedIntent("information.lookup.order.status", 0.87, true, List.of()));
+            when(modelClient.generateResponse(anyList(), anyList(), any(ModelRequestContext.class)))
+                    .thenReturn(new ModelResponse("Direct response", List.of()));
+
+            serviceWithTracer.sendMessage(ChatMessageRequest.of("sess-intent", "where is my order"), "user-trace");
+
+            verify(span).tag("intent.id", "information.lookup.order.status");
+            verify(span).tag("intent.confidence", "0.87");
+            verify(span).tag("intent.meets_threshold", "true");
+        }
+
+        @Test
         @DisplayName("Given model response with thoughtSignature, when tool executed, then preserves thoughtSignature on AssistantMessage in history")
         @SuppressWarnings("unchecked")
         void propagates_thought_signature_from_tool_call_to_history() {

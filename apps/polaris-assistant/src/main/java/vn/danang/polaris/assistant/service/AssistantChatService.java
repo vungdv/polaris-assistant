@@ -162,6 +162,7 @@ public class AssistantChatService {
         ConversationLoopResult loopResult;
         try {
             resolvedIntent = intentResolutionFacade.resolve(messageText, history);
+            tagResolvedIntent(resolvedIntent);
             // 3. Execute tool loop (max 5 iterations)
             loopResult = executeConversationLoop(sessionId, userId, history, resolvedIntent, deadline);
         } catch (ModelUnavailableException e) {
@@ -316,6 +317,21 @@ public class AssistantChatService {
             modelResponse = new ModelResponse(fallback != null ? fallback : "");
         }
         return modelResponse;
+    }
+
+    /**
+     * The TypeSafe generation span carries no intent attributes (the SDK keeps tags on the generation record), so the
+     * turn's span is where a trace shows which intent was chosen and whether it cleared its confidence threshold.
+     */
+    private void tagResolvedIntent(ResolvedIntent resolvedIntent) {
+        if (resolvedIntent == null) {
+            return;
+        }
+        currentSpan().ifPresent(span -> {
+            span.tag("intent.id", String.valueOf(resolvedIntent.intentId()));
+            span.tag("intent.confidence", String.valueOf(resolvedIntent.confidence()));
+            span.tag("intent.meets_threshold", String.valueOf(resolvedIntent.meetsThreshold()));
+        });
     }
 
     private void tagIterationsCount(int iterations) {
