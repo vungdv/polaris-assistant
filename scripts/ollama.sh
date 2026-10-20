@@ -3,12 +3,14 @@
 #   scripts/ollama.sh install   install Ollama, start the server, pull $OLLAMA_MODEL
 #   scripts/ollama.sh clean     remove $OLLAMA_MODEL (keeps Ollama and other models)
 #   scripts/ollama.sh purge     stop and uninstall Ollama and delete ~/.ollama (all models)
+# The server binds 0.0.0.0:11434 (OLLAMA_BIND) so the kind cluster can reach it as host.docker.internal; this exposes it on the LAN.
 # Config (env): OLLAMA_MODEL (default qwen3:4b, ~2.5GB at Q4; fits 8GB RAM). Alternatives: qwen2.5:3b, qwen3:1.7b.
 # Safe to re-run.
 set -euo pipefail
 
 MODEL="${OLLAMA_MODEL:-qwen3:4b}"
 OLLAMA_HOST_URL="${OLLAMA_HOST_URL:-http://localhost:11434}"
+OLLAMA_BIND="${OLLAMA_BIND:-0.0.0.0:11434}"
 
 log() { printf '[ollama] %s\n' "$*" >&2; }
 die() { log "ERROR: $*"; exit 1; }
@@ -17,10 +19,19 @@ die() { log "ERROR: $*"; exit 1; }
 
 server_up() { curl -fsS --max-time 2 "$OLLAMA_HOST_URL/api/version" >/dev/null 2>&1; }
 
+# brew services runs Ollama under launchd, which only sees OLLAMA_HOST set via launchctl.
+loopback_only() { lsof -nP -iTCP:"${OLLAMA_BIND##*:}" -sTCP:LISTEN 2>/dev/null | grep -q '127\.0\.0\.1:' ; }
+
 start_server() {
-  server_up && return 0
-  log "starting the Ollama server (brew services)"
-  brew services start ollama >/dev/null
+  launchctl setenv OLLAMA_HOST "$OLLAMA_BIND"
+  if server_up; then
+    loopback_only || return 0
+    log "restarting the Ollama server to bind $OLLAMA_BIND"
+    brew services restart ollama >/dev/null
+  else
+    log "starting the Ollama server on $OLLAMA_BIND (brew services)"
+    brew services start ollama >/dev/null
+  fi
   for _ in $(seq 1 30); do
     server_up && return 0
     sleep 1
