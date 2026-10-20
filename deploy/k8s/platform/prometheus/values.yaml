@@ -10,17 +10,21 @@
 #     checks): platform-lgtm.sh puts them in the ConfigMap `prometheus-rules` and the chart mounts it below,
 #   - the remote-write receiver (Tempo's metrics generator writes span and service-graph metrics here), exemplar storage,
 #     and retention of 15 days or 5GB, whichever is hit first.
-# The chart's Kubernetes service discovery jobs, Alertmanager, Pushgateway, node-exporter and kube-state-metrics are off:
-# Compose has none of them, and discovery would need cluster-wide RBAC. Pod Security `restricted`: the chart's pod
-# context is non-root; the container context below drops every capability.
+# Alertmanager, Pushgateway and the chart's generic discovery jobs (pods, services, API server) are off. Cluster metrics
+# for the Kubernetes dashboard (docker/telemetry/grafana/provisioning/dashboards/json/kubernetes-cluster.json) come from
+# kube-state-metrics, the kubelets' cAdvisor and node-exporter (platform/node-exporter), which Compose has no equivalent
+# of; they need the read-only ClusterRole enabled below. Pod Security `restricted`: the chart's pod context is non-root;
+# the container context below drops every capability.
 
 serviceAccounts:
   server:
-    # The server discovers nothing, so it needs no API token.
-    automountServiceAccountToken: false
+    # Node discovery (the cAdvisor and node-exporter jobs below) reads the API with the pod's token.
+    automountServiceAccountToken: true
 
+# The chart's ClusterRole: read-only get/list/watch, which node and pod discovery and the kubelet's authorization of
+# /metrics/cadvisor (nodes/metrics) need.
 rbac:
-  create: false
+  create: true
 
 alertmanager:
   enabled: false
@@ -28,8 +32,19 @@ prometheus-pushgateway:
   enabled: false
 prometheus-node-exporter:
   enabled: false
+# Cluster object state (deployments, pods, nodes, PVCs) for the Kubernetes dashboard. The subchart's container meets Pod
+# Security `restricted`; it's scraped by the `kube-state-metrics` job below.
 kube-state-metrics:
-  enabled: false
+  enabled: true
+  fullnameOverride: kube-state-metrics
+  # Scraped by the explicit job below, not by annotation discovery, which would also pick up CoreDNS.
+  prometheusScrape: false
+  resources:
+    requests:
+      cpu: 10m
+      memory: 64Mi
+    limits:
+      memory: 256Mi
 
 server:
   fullnameOverride: prometheus
@@ -91,8 +106,9 @@ scrapeConfigs:
     enabled: false
   kubernetes-nodes:
     enabled: false
+  # Per-container CPU, memory, network and filesystem usage, scraped from each kubelet (TCP 10250).
   kubernetes-nodes-cadvisor:
-    enabled: false
+    enabled: true
   kubernetes-service-endpoints:
     enabled: false
   kubernetes-service-endpoints-slow:
@@ -128,3 +144,22 @@ extraScrapeConfigs: |
   - job_name: 'grafana'
     static_configs:
       - targets: ['grafana:3000']
+  - job_name: 'kube-state-metrics'
+    static_configs:
+      - targets: ['kube-state-metrics:8080']
+  # Host CPU, memory, disk and network: node-exporter runs in the `otel` namespace (platform/node-exporter), the node-level
+  # telemetry namespace that already enforces Pod Security `privileged`, because it needs the host's namespaces and
+  # `restricted` here forbids them. One pod per node, on the node's own IP.
+  - job_name: 'node-exporter'
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names: ['otel']
+        selectors:
+          - role: pod
+            label: 'app.kubernetes.io/name=prometheus-node-exporter'
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_node_name]
+        target_label: node
+      - source_labels: [__meta_kubernetes_pod_node_name]
+        target_label: instance

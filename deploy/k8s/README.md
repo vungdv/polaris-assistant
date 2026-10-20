@@ -125,7 +125,8 @@ source:
 |:--|:--|:--|:--|:--|
 | `tempo` | `grafana-community/tempo` | `tempo` 3200 (HTTP), 4317 (OTLP gRPC) | `platform/tempo/values.yaml` | `tempo/tempo.yml`: 3-day retention, ingest limits, span-metrics and service-graphs remote-written to Prometheus |
 | `loki` | `grafana-community/loki` | `loki` 3100 | `platform/loki/values.yaml` | `loki/loki.yml`: 7-day retention, ingest caps, only 3 index labels |
-| `prometheus` | `prometheus-community/prometheus` | `prometheus` 9090 | `platform/prometheus/values.yaml` + ConfigMap `prometheus-rules` | `prometheus/prometheus.yml` scrape jobs, 15 days or 5GB, and `prometheus/rules/*.yml` as they are (`make test-rules`) |
+| `prometheus` | `prometheus-community/prometheus` | `prometheus` 9090 | `platform/prometheus/values.yaml` + ConfigMap `prometheus-rules` | `prometheus/prometheus.yml` scrape jobs, 15 days or 5GB, and `prometheus/rules/*.yml` as they are (`make test-rules`); plus the cluster-metrics jobs behind the `Kubernetes Cluster` dashboard (below) |
+| `kube-state-metrics`, `node-exporter` | `prometheus-community/prometheus` (subchart, `observability`); `prometheus-community/prometheus-node-exporter` (`otel`) | `kube-state-metrics` 8080; node-exporter 9100 on each node | `platform/prometheus/values.yaml`; `platform/node-exporter/values.yaml` | none in Compose: the `Kubernetes Cluster` dashboard (`kubernetes-cluster.json`) is empty there. Prometheus also scrapes each kubelet's cAdvisor (10250) with the chart's read-only ClusterRole; node-exporter runs in `otel` (Pod Security `privileged`, host namespaces) |
 | `grafana` | `grafana-community/grafana` | `grafana` 3000, `https://grafana.polaris.local` | `platform/grafana/values.yaml`, ConfigMaps `grafana-datasources` and `grafana-dashboards`, `base/grafana` (HTTPRoute) | the provisioning datasources and dashboards unchanged; Keycloak master-realm SSO with the same role mapping |
 
 - **Signals.** Traces: Collector → Tempo (OTLP/gRPC). Logs: Collector → Loki's OTLP endpoint. Metrics: Prometheus scrapes
@@ -420,7 +421,8 @@ on both ends (the caller's egress, the callee's ingress, on the callee's contain
 | `otel-collector` (`otel`) | the apps 4318; Keycloak, the Gateway 4317, the log agent 4317; Prometheus (`observability`) 8888, 8889 | the API server; Tempo (`observability`) 4317; Loki 3100 |
 | `tempo` | the Collector 4317; Grafana, Prometheus 3200 | Prometheus 9090 (remote write) |
 | `loki` | the Collector, Grafana, Prometheus: 3100 | nothing |
-| `prometheus` | Grafana, Tempo: 9090 | the Collector 8888, 8889; Tempo 3200; Loki 3100; Grafana 3000 |
+| `prometheus` | Grafana, Tempo: 9090 | the Collector 8888, 8889; Tempo 3200; Loki 3100; Grafana 3000; kube-state-metrics 8080; the API 6443; kubelets 10250; node-exporter 9100 |
+| `kube-state-metrics` | Prometheus: 8080 | the API 6443 |
 | `grafana` | the Gateway, Prometheus: 3000 | Prometheus 9090, Loki 3100, Tempo 3200, the Gateway 443 (SSO) |
 
 The API server and the external APIs have no pods to select: the API server is TCP 6443 on any address (a cloud overlay

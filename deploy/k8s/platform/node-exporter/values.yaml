@@ -1,0 +1,34 @@
+# Helm values for node-exporter, installed by scripts/k8s/platform/platform-observability.sh from the upstream chart
+# ($NODE_EXPORTER_CHART from $PROMETHEUS_REPO at $NODE_EXPORTER_VERSION, deploy/k8s/versions.env) into the `otel`
+# namespace: a DaemonSet that exposes each node's CPU, memory, disk and network on the node's own address, TCP 9100.
+# Prometheus (platform/prometheus) discovers the pods and scrapes them for the Kubernetes dashboard.
+#
+# It reads the host's /proc and /sys and shares its network namespace, which Pod Security `restricted` forbids; `otel`
+# enforces `privileged` for the node-level log agent, and this is the same accepted exception (TR-K10). Its container
+# still drops every capability and keeps a read-only root filesystem.
+
+fullnameOverride: node-exporter
+
+# The chart creates a Service and a ServiceMonitor for discovery by an operator; Prometheus discovers the pods itself.
+service:
+  enabled: false
+prometheus:
+  monitor:
+    enabled: false
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+
+# A kind control-plane node is tainted: tolerate it, so both nodes are observed.
+tolerations:
+  - operator: Exists
+
+resources:
+  requests:
+    cpu: 10m
+    memory: 32Mi
+  limits:
+    memory: 128Mi

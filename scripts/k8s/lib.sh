@@ -31,6 +31,7 @@ export KUBECONFIG="$K8S_KUBECONFIG"
   # (platform/otel, platform/otel-collector, platform/otel-agent). The namespace is Pod Security `privileged` for the agent.
   OTEL_COLLECTOR=otel-collector
   OTEL_AGENT=otel-agent
+  NODE_EXPORTER_RELEASE=node-exporter
   OTEL_NAMESPACE=otel
   # Local LGTM stack (K12): Tempo, Loki, Prometheus and Grafana, one Helm release and one same-named Service each, in the
   # `observability` namespace (platform/observability, platform/tempo, platform/loki, platform/prometheus,

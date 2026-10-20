@@ -3,6 +3,7 @@
 # base/network-policies/edge.yaml). Each policy selects the chart's pods by app.kubernetes.io/instance, the release name:
 #   Collector -> Tempo 4317 (OTLP/gRPC)        Collector -> Loki 3100 (OTLP/HTTP)    Prometheus -> Collector 8888, 8889
 #   Prometheus -> Tempo 3200, Loki 3100, Grafana 3000 (scrape)   Tempo -> Prometheus 9090 (remote write)
+#   Prometheus -> kube-state-metrics 8080, the Kubernetes API 6443, kubelets 10250, node-exporter 9100 (cluster metrics)
 #   Grafana -> Prometheus 9090, Loki 3100, Tempo 3200 (queries)  Gateway -> Grafana 3000  Grafana -> Gateway 443 (SSO:
 #   https://id.polaris.local, through the CoreDNS rewrite). None of them reaches anything else.
 apiVersion: networking.k8s.io/v1
@@ -124,9 +125,10 @@ metadata:
   labels:
     app.kubernetes.io/part-of: polaris
 spec:
+  # The server only: kube-state-metrics shares the release name and has its own policy below.
   podSelector:
     matchLabels:
-      app.kubernetes.io/instance: prometheus
+      app.kubernetes.io/name: prometheus
   policyTypes:
     - Ingress
     - Egress
@@ -175,6 +177,51 @@ spec:
       ports:
         - protocol: TCP
           port: 3000
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: kube-state-metrics
+      ports:
+        - protocol: TCP
+          port: 8080
+    # Node and pod discovery: the Kubernetes API (see base/network-policies/kustomization.yaml).
+    - ports:
+        - protocol: TCP
+          port: 6443
+    # The kubelets' cAdvisor (10250) and node-exporter (9100, on each node's own address: hostNetwork). Neither has a pod
+    # to select.
+    - ports:
+        - protocol: TCP
+          port: 10250
+        - protocol: TCP
+          port: 9100
+---
+# kube-state-metrics: scraped by Prometheus, watches the Kubernetes API.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: kube-state-metrics
+  labels:
+    app.kubernetes.io/part-of: polaris
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: kube-state-metrics
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+      ports:
+        - protocol: TCP
+          port: 8080
+  egress:
+    - ports:
+        - protocol: TCP
+          port: 6443
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
