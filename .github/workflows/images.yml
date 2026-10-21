@@ -1,22 +1,15 @@
 # Application images (plan k8s-deployment, K2; TR-K2): builds each app from its Dockerfile, checks that it runs as a
 # numeric non-root UID, and on a push to main pushes ghcr.io/<owner>/<app>:<git-sha>. Pull requests build without
-# pushing. Locally, `make k8s-images` builds the same images and loads them into kind.
+# pushing. Every run also uploads each image as an `image-<app>` artifact (docker save), which the Kubernetes workflow
+# loads into kind instead of rebuilding. Called from k8s.yml; locally, `make k8s-images` builds the same images.
 
 name: Images
 
 on:
-  push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
+  workflow_call:
 
 permissions:
   contents: read
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  # Never cancel a push to main half way: every main commit gets its image
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   image:
@@ -62,3 +55,11 @@ jobs:
     - name: Push
       if: env.PUSH == 'true'
       run: docker push "$IMAGE"
+    - name: Save the image for the Kubernetes workflow
+      run: docker save "$IMAGE" --output "${RUNNER_TEMP}/${{ matrix.app }}.tar"
+    - uses: actions/upload-artifact@v7
+      with:
+        name: image-${{ matrix.app }}
+        path: ${{ runner.temp }}/${{ matrix.app }}.tar
+        retention-days: 1
+        compression-level: 0
