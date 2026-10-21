@@ -16,7 +16,7 @@ Manifests and tooling for running Polaris on Kubernetes ([ADR-0021](../../docs/t
 |:--|:--|
 | `make k8s-up` | Installs the pinned tools into `.tools/bin`, creates the kind cluster `polaris` if missing, installs the platform components (`scripts/k8s/platform.sh`), applies `overlays/local` and waits for the edge, the data stores, Kafka, Keycloak and the apps whose images are loaded |
 | `make k8s-images` | Builds the three app images as `ghcr.io/vungdv/<app>:<git-sha>` and loads them into the cluster with `kind load docker-image` (`APPS=polaris` for a subset) |
-| `make k8s-smoke` | Runs `scripts/k8s/smoke.sh` against the cluster |
+| `make k8s-smoke` | Runs `scripts/k8s/smoke.sh` against the cluster (use cases in `scripts/k8s/smoke-tests/`) |
 | `make k8s-e2e-fulfilment` | Runs the fulfilment e2e (`tests/e2e/run-fulfilment.sh`, as `make e2e-fulfilment` on Compose) through the cluster's Gateway, and checks the order events inside a Kafka node |
 | `make k8s-down` | Deletes the cluster |
 | `make k8s-kafka-topics`, `-tail`, `-cluster`, `-offsets`, `-groups`, `-leaders` | The Kafka admin commands of `make kafka-*`, run in a Kafka node with `kubectl exec` (`scripts/k8s/kafka.sh`; `TOPIC=`, `NODE=1..3`) |

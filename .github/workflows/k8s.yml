@@ -25,7 +25,7 @@ jobs:
     steps:
     - uses: actions/checkout@v7
     - name: Lint scripts
-      run: shellcheck -x scripts/k8s/*.sh
+      run: shellcheck -x scripts/k8s/*.sh scripts/k8s/smoke-tests/*.sh scripts/k8s/smoke-tests/lib/*.sh
     - name: Test the model stub
       run: python3 -m unittest discover -s deploy/k8s/overlays/ci/model-stub -v
     - name: Validate rendered manifests (kustomize + kubeconform) and Helm values
