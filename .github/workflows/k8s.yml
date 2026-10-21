@@ -14,7 +14,8 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Never cancel a push to main half way: every main commit gets its image
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   validate:
@@ -30,9 +31,16 @@ jobs:
     - name: Validate rendered manifests (kustomize + kubeconform) and Helm values
       run: make k8s-validate
 
+  images:
+    name: Images
+    uses: ./.github/workflows/images.yml
+    permissions:
+      contents: read
+      packages: write
+
   kind:
     name: Deploy to kind and smoke test
-    needs: validate
+    needs: [ validate, images ]
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
@@ -48,12 +56,19 @@ jobs:
         printf 'GEMINI_API_KEY=model-stub\nTYPESAFE_API_KEY=model-stub\n' > deploy/k8s/.env.local
     - name: Create cluster and apply overlays/ci
       run: make k8s-up
-    # The three apps (K8: polaris, K9: polaris-assistant, K10: polaris-fulfilment-emulator), built from this commit and
-    # loaded with `kind load` (GHCR packages are private, and PR images aren't pushed). Both polaris replicas then start
-    # together on the empty database, the concurrent Flyway start the smoke test checks; the assistant and the emulator
-    # start once polaris is ready.
-    - name: Build and load the app images
+    # The three apps (K8: polaris, K9: polaris-assistant, K10: polaris-fulfilment-emulator), built once by the images job
+    # for this commit and loaded with `kind load image-archive` (GHCR packages are private, and PR images aren't pushed).
+    # Both polaris replicas then start together on the empty database, the concurrent Flyway start the smoke test
+    # checks; the assistant and the emulator start once polaris is ready.
+    - uses: actions/download-artifact@v8
+      with:
+        pattern: image-*
+        path: ${{ runner.temp }}/images
+        merge-multiple: true
+    - name: Load the app images
       run: make k8s-images APPS="polaris polaris-assistant polaris-fulfilment-emulator"
+      env:
+        IMAGE_ARCHIVE_DIR: ${{ runner.temp }}/images
     - name: Re-run k8s-up (idempotent; waits for the apps)
       run: make k8s-up
     - name: Smoke test
