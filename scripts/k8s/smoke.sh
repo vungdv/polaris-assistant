@@ -1683,12 +1683,12 @@ if out="$(run_probe lgtm-smoke "$SMOKE_CURL_IMAGE" 100 "$lgtm_script" "$lgtm_env
   check "Tempo's metrics generator wrote span-metrics to Prometheus" grep -Eqx "spanmetrics [1-9][0-9]*" <<<"$out"
   check "every Prometheus scrape target is up (Collector, Collector self-metrics, Tempo, Loki, Grafana, Prometheus)" \
     grep -qx "down 0" <<<"$out"
-  check "Prometheus scrapes 6 targets" grep -qx "targets 6" <<<"$out"
+  check "Prometheus scrapes 11 targets" grep -qx "targets 11" <<<"$out"
   check "Prometheus loaded the Compose rule files (assistant-slo-burn)" grep -q 'assistant-slo-burn' <<<"$out"
   check "Grafana is healthy" grep -q 'grafana "database": *"ok"' <<<"$out"
   check "Grafana has the datasources prometheus, loki and tempo" \
     grep -Eq '^datasources ("uid":"(loki|prometheus|tempo)" ?){3}$' <<<"$out"
-  check "Grafana has the 3 provisioned dashboards" grep -qx "dashboards 3" <<<"$out"
+  check "Grafana has the 4 provisioned dashboards" grep -qx "dashboards 4" <<<"$out"
   check "https://grafana.polaris.local redirects to the Keycloak master realm for SSO" \
     grep -q "^sso 302 https://id.polaris.local/realms/master/protocol/openid-connect/auth" <<<"$out"
 else

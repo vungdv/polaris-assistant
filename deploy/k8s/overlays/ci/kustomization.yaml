@@ -11,6 +11,10 @@ patches:
       kind: ConfigMap
       name: polaris-assistant
     patch: |-
+      # The local overlay selects host Ollama/Qwen, which a CI runner doesn't have; the stub speaks Gemini.
+      - op: replace
+        path: /data/POLARIS_AI_PROVIDER
+        value: gemini
       - op: add
         path: /data/POLARIS_AI_BASE_URL
         value: http://model-stub.polaris.svc.cluster.local:8080
