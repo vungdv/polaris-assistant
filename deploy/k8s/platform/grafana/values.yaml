@@ -40,7 +40,9 @@ resources:
   requests:
     cpu: 50m
     memory: 128Mi
+  # The CPU limit keeps a runaway Grafana from starving the control-plane node (it once took 6+ of 8 cores).
   limits:
+    cpu: 500m
     memory: 512Mi
 
 # No sidecars, no plugin downloads, no Kubernetes API access.
