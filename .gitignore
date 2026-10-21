@@ -182,3 +182,9 @@ deploy/k8s/overlays/local/images/
 
 # Keycloak realm imports generated from docker/keycloak/*.json by scripts/k8s/lib.sh (write_realm_imports)
 deploy/k8s/overlays/local/realms/
+
+# =============================================================================
+# Coding Agent: Claude, Copilot, Antigravity
+# =============================================================================
+# Agent git worktrees (recreated per agent run)
+.claude/worktrees/
