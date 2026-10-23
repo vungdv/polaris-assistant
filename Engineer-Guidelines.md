@@ -73,7 +73,7 @@ These concise guidelines capture the repo-specific architectural patterns, opera
 
 ## 4. Testability & Verification Strategy
 
-Verification follows a strict multi-tier hierarchy:
+Verification follows a strict multi-tier hierarchy. The tiers below are defined by tool; what each kind of test is *for*, where it lives and how it is named is defined in the [Testing Guideline](docs/development/testing-guideline.md) (scope × aspect matrix, one purpose per test, push tests down).
 
 - **Tier 1: Automated Unit & Integration Tests**:
   - Run `mvn clean test` (or `mvn test -pl apps/polaris`) before completing any slice.
