@@ -125,7 +125,9 @@ make up
 | **Clean Stack** | `make clean` | Stops containers, removes orphan containers and volumes |
 | **Rebuild Images** | `make build` | Rebuilds the Polaris Spring Boot application container images |
 | **Restart Service** | `make restart-<service>` | Restarts a single container (e.g. `make restart-polaris`) |
-| **Run All Tests** | `make test` / `mvn clean test` | Executes local Java unit & domain integration tests across all modules |
+| **Run All Tests** | `make test` / `mvn clean verify` | Unit stage (`*Test`), then integration stage (`*IntegrationTest`, needs Docker), all modules |
+| **Unit Tests Only** | `make test-unit` / `mvn test` | Fast stage: no Spring context, no containers |
+| **Integration Tests Only** | `make test-integration` | `*IntegrationTest` only, via Failsafe |
 | **Performance Tests** | `make test-perf` | Executes k6 API performance and contract validation suite in Docker |
 | **Concurrency Tests** | `make test-concurrency` | Executes k6 high-concurrency inventory race condition audit in Docker |
 | **Telemetry CLI** | `make gcx` / `./gcx.sh` | Queries Tempo traces and Loki logs in-terminal via Grafana gcx CLI |
