@@ -1,4 +1,4 @@
-.PHONY: seed-shoppers chat-scenarios pull build up up-dev-ports down validate-docs setup-hooks render-bpmn test test-rules test-perf test-concurrency e2e-fulfilment e2e-fulfilment gcx gcx-exec status playwright-ui playwright-close run run-assistant run-fulfilment verify-fulfilment-image clean polaris-sql kafka-topics kafka-tail kafka-cluster kafka-offsets kafka-groups kafka-leaders k8s-tools k8s-validate k8s-up k8s-down k8s-smoke k8s-images k8s-e2e-fulfilment k8s-kafka-topics k8s-kafka-tail k8s-kafka-cluster k8s-kafka-offsets k8s-kafka-groups k8s-kafka-leaders
+.PHONY: seed-shoppers chat-scenarios pull build up up-dev-ports down validate-docs setup-hooks render-bpmn test sonar-up sonar sonar-down test-rules test-perf test-concurrency e2e-fulfilment e2e-fulfilment gcx gcx-exec status playwright-ui playwright-close run run-assistant run-fulfilment verify-fulfilment-image clean polaris-sql kafka-topics kafka-tail kafka-cluster kafka-offsets kafka-groups kafka-leaders k8s-tools k8s-validate k8s-up k8s-down k8s-smoke k8s-images k8s-e2e-fulfilment k8s-kafka-topics k8s-kafka-tail k8s-kafka-cluster k8s-kafka-offsets k8s-kafka-groups k8s-kafka-leaders
 
 run:
 	mvn spring-boot:run -pl apps/polaris
@@ -31,6 +31,14 @@ restart-%:
 	docker compose restart $*
 test:
 	mvn clean test
+# SonarQube: UI http://localhost:9000 (admin/admin on first start). Create a project token there, then:
+#   SONAR_TOKEN=<token> make sonar   (or put SONAR_TOKEN / SONAR_HOST_URL in .env, which this target sources)
+sonar-up:
+	docker compose -f docker-compose.sonar.yml up -d
+sonar-down:
+	docker compose -f docker-compose.sonar.yml down
+sonar:
+	mvn clean verify org.sonarsource.scanner.maven:sonar-maven-plugin:sonar -Dsonar.host.url=$${SONAR_HOST_URL:-http://localhost:9000} -Dsonar.token=$$SONAR_TOKEN -Dsonar.projectKey=polaris
 # promtool unit tests for the Prometheus recording/alerting rules (same image as the stack)
 test-rules:
 	docker run --rm -v $$(pwd)/docker/telemetry/prometheus:/prom:ro -w /prom/tests --entrypoint promtool prom/prometheus:v3.14.0 test rules $$(cd docker/telemetry/prometheus/tests && ls *.test.yml)

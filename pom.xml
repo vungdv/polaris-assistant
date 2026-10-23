@@ -39,7 +39,6 @@
 		<wiremock.version>3.13.2</wiremock.version>
 		<cloudevents.version>4.0.1</cloudevents.version>
 		<resilience4j.version>2.4.0</resilience4j.version>
-		<argLine></argLine>
 	</properties>
 
 	<dependencyManagement>
@@ -97,7 +96,7 @@
 				<artifactId>opentelemetry-logback-appender-1.0</artifactId>
 				<version>${opentelemetry-logback.version}</version>
 			</dependency>
-			<!-- Grafana AI Observability (Sigil) SDK: OTel GenAI semconv spans + metrics -->
+			<!-- Grafana AI Observability (Sigil) SDK: OTel GenAI spans + metrics -->
 			<dependency>
 				<groupId>com.grafana.agento11y</groupId>
 				<artifactId>agento11y-core</artifactId>
@@ -179,6 +178,26 @@
 					<execution>
 						<goals>
 							<goal>properties</goal>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
+			<!-- Coverage for SonarQube (make sonar). prepare-agent fills ${argLine}, which surefire consumes as @{argLine}. -->
+			<plugin>
+				<groupId>org.jacoco</groupId>
+				<artifactId>jacoco-maven-plugin</artifactId>
+				<executions>
+					<execution>
+						<id>prepare-agent</id>
+						<goals>
+							<goal>prepare-agent</goal>
+						</goals>
+					</execution>
+					<execution>
+						<id>report</id>
+						<phase>test</phase>
+						<goals>
+							<goal>report</goal>
 						</goals>
 					</execution>
 				</executions>
