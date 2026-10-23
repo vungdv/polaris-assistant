@@ -1,0 +1,16 @@
+# Local SonarQube Community for analysing test results + coverage (make sonar-up / make sonar).
+services:
+  sonarqube:
+    image: sonarqube:community
+    container_name: sonarqube
+    ports:
+      - "127.0.0.1:9000:9000"
+    environment:
+      SONAR_ES_BOOTSTRAP_CHECKS_DISABLE: "true"
+    volumes:
+      - sonarqube-data:/opt/sonarqube/data
+      - sonarqube-extensions:/opt/sonarqube/extensions
+
+volumes:
+  sonarqube-data:
+  sonarqube-extensions:
