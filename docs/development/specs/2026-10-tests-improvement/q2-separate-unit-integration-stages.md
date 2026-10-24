@@ -2,7 +2,7 @@
 
 - **Plan:** [Tests Improvement](../../plan/2026-10-tests-improvement/02.plan.md) · **Slice:** Q2 · **Depends on:** Q1 (done)
 - **Scope:** separate unit and integration tests by naming convention (`*Test` = unit, `*IntegrationTest` = integration) and make each stage runnable on its own from Maven and `make`. Build and test tooling only; no production code, no moving of tests between layers. Automated enforcement of the convention (guard, aspect tag) is slice Q2.2.
-- **Spec state:** in-review (approval is the PR review of this slice)
+- **Spec state:** approved (PR #33 reviewed and merged 2026-10-24)
 
 ## 1. Principle and guidelines
 
