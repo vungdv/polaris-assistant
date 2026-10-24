@@ -18,7 +18,7 @@ import vn.danang.polaris.assistant.config.AssistantGenAiTelemetryProperties;
  * Boot builds its OpenTelemetrySdk without a MeterProvider; without {@link GenAiTelemetryConfig} every
  * {@code gen_ai.client.*} metric would be recorded against a no-op meter and never leave the process.
  */
-class GenAiTelemetryConfigTest {
+class GenAiTelemetryConfigIntegrationTest {
 
     private final ApplicationContextRunner runner = new ApplicationContextRunner()
             .withConfiguration(AutoConfigurations.of(ConfigurationPropertiesAutoConfiguration.class, OpenTelemetrySdkAutoConfiguration.class))

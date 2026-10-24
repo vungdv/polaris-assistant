@@ -37,7 +37,7 @@ import vn.danang.polaris.web.support.JwtMockFactory;
 @WebMvcTest(CategoryController.class)
 @ImportAutoConfiguration(WebConfig.class)
 @Import({SecurityConfig.class, GlobalExceptionHandler.class})
-public class CategoryControllerTest {
+public class CategoryControllerIntegrationTest {
 
     @Autowired
     private MockMvc mockMvc;

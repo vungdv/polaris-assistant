@@ -20,7 +20,7 @@ import vn.danang.polaris.outbox.transport.EventTransport;
 import vn.danang.polaris.outbox.store.JdbcOutboxStore;
 import vn.danang.polaris.outbox.store.OutboxStore;
 
-class OutboxAutoConfigurationTest {
+class OutboxAutoConfigurationIntegrationTest {
 
     private final ApplicationContextRunner runner = new ApplicationContextRunner()
             .withConfiguration(AutoConfigurations.of(OutboxAutoConfiguration.class));

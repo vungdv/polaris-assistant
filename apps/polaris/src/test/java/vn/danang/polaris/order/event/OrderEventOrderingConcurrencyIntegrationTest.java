@@ -57,9 +57,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * loser must record nothing.
  */
 @SpringBootTest
-@Import({ TestcontainersConfiguration.class, OrderEventOrderingConcurrencyTest.ProbeConfig.class })
+@Import({ TestcontainersConfiguration.class, OrderEventOrderingConcurrencyIntegrationTest.ProbeConfig.class })
 @Timeout(value = 60, unit = TimeUnit.SECONDS)
-class OrderEventOrderingConcurrencyTest {
+class OrderEventOrderingConcurrencyIntegrationTest {
 
     private static final String SKU = "E4-ORDERING-SKU";
     private static final String SKU_B = "E4-ORDERING-SKU-B";

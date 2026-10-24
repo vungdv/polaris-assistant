@@ -41,7 +41,7 @@ import vn.danang.polaris.assistant.entity.MessageRole;
  * The real {@link OpenAiCompatibleModelClient} behind {@link ResilientModelClient} with the {@code qwen} breaker,
  * over real HTTP (WireMock), with small breaker and retry settings (window of 4 calls, 50 ms backoff).
  */
-class ResilientQwenClientTest {
+class ResilientQwenClientIntegrationTest {
 
     @RegisterExtension
     static WireMockExtension qwen = WireMockExtension.newInstance().options(wireMockConfig().dynamicPort()).build();

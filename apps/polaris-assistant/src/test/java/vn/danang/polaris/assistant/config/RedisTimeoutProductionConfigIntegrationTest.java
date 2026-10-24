@@ -19,10 +19,10 @@ import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactor
 /**
  * The production {@code application.yml} Redis timeouts reach the Lettuce client. The test {@code application.yml}
  * shadows the main one on the test classpath, so this loads the main file directly (as
- * {@code ModelResilienceProductionConfigTest} does) and binds it through Boot's own Redis auto-configuration.
+ * {@code ModelResilienceProductionConfigIntegrationTest} does) and binds it through Boot's own Redis auto-configuration.
  * No Redis is needed: the connection factory connects lazily.
  */
-class RedisTimeoutProductionConfigTest {
+class RedisTimeoutProductionConfigIntegrationTest {
 
     private static final String MAIN_CONFIG = "src/main/resources/application.yml";
 

@@ -15,7 +15,7 @@ import org.springframework.boot.test.context.runner.ApplicationContextRunner;
  * Binding contract for the split model properties: {@code polaris.ai.provider} selects, {@code polaris.ai.gemini.*}
  * configures Gemini, and the env var names of existing ConfigMaps keep resolving.
  */
-class ModelPropertiesBindingTest {
+class ModelPropertiesBindingIntegrationTest {
 
     private final ApplicationContextRunner bare = new ApplicationContextRunner()
             .withConfiguration(AutoConfigurations.of(ConfigurationPropertiesAutoConfiguration.class))

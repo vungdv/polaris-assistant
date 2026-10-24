@@ -34,7 +34,7 @@ import vn.danang.polaris.web.support.JwtMockFactory;
 
 @WebMvcTest(OrderController.class)
 @Import({SecurityConfig.class, GlobalExceptionHandler.class})
-public class OrderControllerTest {
+public class OrderControllerIntegrationTest {
 
     @Autowired
     private MockMvc mockMvc;

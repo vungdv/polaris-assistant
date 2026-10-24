@@ -43,7 +43,7 @@ import vn.danang.polaris.assistant.entity.MessageRole;
  * F1.1-F1.7 and the provider-specific X items (X1, X2, X4, X8) for {@link OpenAiCompatibleModelClient}, over the real
  * HTTP interface with the plan's §8 fixtures as stub bodies.
  */
-class OpenAiCompatibleModelClientWireMockTest {
+class OpenAiCompatibleModelClientWireMockIntegrationTest {
 
     private static final Path FIXTURES = Path.of("../../docs/development/plan/qwen-model-client-fixtures");
     private static final String PATH = "/v1/chat/completions";

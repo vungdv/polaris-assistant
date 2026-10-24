@@ -48,7 +48,7 @@ import vn.danang.polaris.assistant.entity.MessageRole;
  * The real {@link GeminiAiModelClient} behind {@link ResilientModelClient}, against WireMock fault injection,
  * with small breaker and retry settings (window of 4 calls, 50 ms backoff).
  */
-class ResilientModelClientTest {
+class ResilientModelClientIntegrationTest {
 
     @RegisterExtension
     static WireMockExtension gemini = WireMockExtension.newInstance().options(wireMockConfig().dynamicPort()).build();

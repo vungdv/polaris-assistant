@@ -38,7 +38,7 @@ import vn.danang.polaris.assistant.config.GeminiProperties;
 import vn.danang.polaris.assistant.config.QwenProperties;
 
 /** X9 for Qwen: probe of {@code GET {base-url}/models} over real HTTP, selection, and exclusion from readiness. */
-class QwenHealthIndicatorTest {
+class QwenHealthIndicatorIntegrationTest {
 
     private static final Path MODELS = Path
             .of("../../docs/development/plan/qwen-model-client-fixtures/models.response.json");

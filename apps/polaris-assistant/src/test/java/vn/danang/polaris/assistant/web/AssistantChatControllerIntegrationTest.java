@@ -43,7 +43,7 @@ import vn.danang.polaris.web.exception.GlobalExceptionHandler;
 
 @WebMvcTest(AssistantChatController.class)
 @Import({SecurityConfig.class, GlobalExceptionHandler.class})
-class AssistantChatControllerTest {
+class AssistantChatControllerIntegrationTest {
 
     @Autowired
     private MockMvc mockMvc;

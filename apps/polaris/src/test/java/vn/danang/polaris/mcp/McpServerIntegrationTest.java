@@ -42,7 +42,7 @@ import vn.danang.polaris.web.support.JwtMockFactory;
 @AutoConfigureMockMvc
 @Transactional
 @Import(TestcontainersConfiguration.class)
-class McpServerTest {
+class McpServerIntegrationTest {
 
     @Autowired
     private MockMvc mockMvc;

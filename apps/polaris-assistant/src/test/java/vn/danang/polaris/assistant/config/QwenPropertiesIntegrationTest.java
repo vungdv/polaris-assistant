@@ -11,7 +11,7 @@ import org.springframework.boot.autoconfigure.context.ConfigurationPropertiesAut
 import org.springframework.boot.test.context.ConfigDataApplicationContextInitializer;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
-class QwenPropertiesTest {
+class QwenPropertiesIntegrationTest {
 
     @Test
     @DisplayName("Given no overrides, then Qwen's default systemPrompt equals Gemini's (plan 7.8)")

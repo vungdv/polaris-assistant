@@ -20,7 +20,7 @@ import vn.danang.polaris.order.entity.Customer;
 @SpringBootTest
 @Transactional
 @Import(TestcontainersConfiguration.class)
-class CustomerRepositoryFuzzyTest {
+class CustomerRepositoryFuzzyIntegrationTest {
 
     @Autowired
     private CustomerRepository customerRepository;

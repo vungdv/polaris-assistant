@@ -41,7 +41,7 @@ import vn.danang.polaris.assistant.entity.MessageRole;
  * Verifies {@link GeminiAiModelClient} against a real HTTP server stubbed with WireMock,
  * exercising the actual request/response wire format instead of a mocked {@link java.net.http.HttpClient}.
  */
-class GeminiAiModelClientWireMockTest {
+class GeminiAiModelClientWireMockIntegrationTest {
 
     @RegisterExtension
     static WireMockExtension wireMock = WireMockExtension.newInstance()

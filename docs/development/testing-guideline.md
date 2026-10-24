@@ -36,7 +36,7 @@ How we decide what kind of test to write, where it lives, and how it is run. Bas
 
 ## 4. Naming and stages
 
-Target convention (the enforcement mechanism, aspect declaration and `make` targets are defined by the build, not here):
+Convention (the suffix selects the stage; automated enforcement and the aspect declaration mechanism follow in slice Q2.2):
 
 | Suffix / location | Stage | Must not |
 |:--|:--|:--|
@@ -46,6 +46,12 @@ Target convention (the enforcement mechanism, aspect declaration and `make` targ
 | `tests/perf` | k6 | — |
 
 Unit tests run in seconds on every change; integration tests run in minutes before a PR; contract, e2e and perf run as separate CI jobs.
+
+| Command | Runs |
+|:--|:--|
+| `make test-unit` (`mvn test`) | `*Test` only (Surefire). No Spring context, no container. |
+| `make test-integration` (`mvn verify -DskipUnitTests=true`) | `*IntegrationTest` only (Failsafe, needs Docker). |
+| `make test` (`mvn clean verify`) | Unit, then integration. Coverage covers both. |
 
 ## 5. Cross-cutting aspects
 

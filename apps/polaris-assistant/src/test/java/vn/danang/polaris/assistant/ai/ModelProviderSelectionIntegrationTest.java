@@ -31,7 +31,7 @@ import vn.danang.polaris.assistant.entity.AssistantMessage;
 import vn.danang.polaris.assistant.entity.MessageRole;
 
 /** F2.1-F2.4: provider selection and startup validation, in a real Spring context with both providers over HTTP. */
-class ModelProviderSelectionTest {
+class ModelProviderSelectionIntegrationTest {
 
     private static final String GEMINI_PATH = "/v1beta/models/gemini-3.6-flash:generateContent";
     private static final String QWEN_PATH = "/v1/chat/completions";

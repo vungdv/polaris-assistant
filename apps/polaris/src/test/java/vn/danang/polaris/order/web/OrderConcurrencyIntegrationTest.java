@@ -43,7 +43,7 @@ import vn.danang.polaris.web.support.JwtMockFactory;
 @SpringBootTest
 @AutoConfigureMockMvc
 @Import(TestcontainersConfiguration.class)
-public class OrderConcurrencyTest {
+public class OrderConcurrencyIntegrationTest {
 
     @Autowired
     private OrderService orderService;

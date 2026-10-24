@@ -23,7 +23,7 @@ import io.github.resilience4j.springboot.circuitbreaker.autoconfigure.CircuitBre
 import io.github.resilience4j.springboot.retry.autoconfigure.RetryAutoConfiguration;
 
 /** The production {@code application.yml} breaker and retry settings bind to the intended values. */
-class ModelResilienceProductionConfigTest {
+class ModelResilienceProductionConfigIntegrationTest {
 
     private static final String MAIN_CONFIG = "src/main/resources/application.yml";
 

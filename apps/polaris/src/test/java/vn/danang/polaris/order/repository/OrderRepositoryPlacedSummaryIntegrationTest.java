@@ -23,7 +23,7 @@ import vn.danang.polaris.order.entity.Order;
 @SpringBootTest
 @Transactional
 @Import(TestcontainersConfiguration.class)
-class OrderRepositoryPlacedSummaryTest {
+class OrderRepositoryPlacedSummaryIntegrationTest {
 
     @Autowired
     private OrderRepository orderRepository;

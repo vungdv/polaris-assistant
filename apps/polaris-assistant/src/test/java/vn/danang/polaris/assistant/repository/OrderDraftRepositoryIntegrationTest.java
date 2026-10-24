@@ -37,7 +37,7 @@ import vn.danang.polaris.assistant.tools.PolarisMcpClient;
  */
 @SpringBootTest
 @Import(TestcontainersConfiguration.class)
-class OrderDraftRepositoryTest {
+class OrderDraftRepositoryIntegrationTest {
 
     private static final Instant NOW = Instant.parse("2026-09-28T10:00:00Z");
     private static final List<DraftLine> LINES = List.of(

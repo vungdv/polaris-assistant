@@ -76,7 +76,7 @@ These concise guidelines capture the repo-specific architectural patterns, opera
 Verification follows a strict multi-tier hierarchy. The tiers below are defined by tool; what each kind of test is *for*, where it lives and how it is named is defined in the [Testing Guideline](docs/development/testing-guideline.md) (scope × aspect matrix, one purpose per test, push tests down).
 
 - **Tier 1: Automated Unit & Integration Tests**:
-  - Run `mvn clean test` (or `mvn test -pl apps/polaris`) before completing any slice.
+  - Run `make test-unit` while iterating and `make test` (`mvn clean verify`, unit then integration, needs Docker) before completing any slice. Per module: `mvn test -pl apps/polaris`.
   - Mock only external boundary seams; exercise domain logic, validation rules, and persistence deterministically.
 - **Tier 2: API Performance & Concurrency Validation (k6)**:
   - Located under `tests/perf/`. Run easily via Makefile or directly via Docker:

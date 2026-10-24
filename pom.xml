@@ -39,6 +39,9 @@
 		<wiremock.version>3.13.2</wiremock.version>
 		<cloudevents.version>4.0.1</cloudevents.version>
 		<resilience4j.version>2.4.0</resilience4j.version>
+		<!-- Unit stage = surefire (*Test), integration stage = failsafe (*IntegrationTest). See docs/development/testing-guideline.md -->
+		<skipTests>false</skipTests>
+		<skipUnitTests>${skipTests}</skipUnitTests>
 	</properties>
 
 	<dependencyManagement>
@@ -200,6 +203,14 @@
 							<goal>report</goal>
 						</goals>
 					</execution>
+					<!-- Re-written after the integration stage; jacoco.exec holds both stages (agent appends). -->
+					<execution>
+						<id>report-verify</id>
+						<phase>verify</phase>
+						<goals>
+							<goal>report</goal>
+						</goals>
+					</execution>
 				</executions>
 			</plugin>
 			<plugin>
@@ -207,6 +218,22 @@
 				<artifactId>maven-surefire-plugin</artifactId>
 				<configuration>
 					<argLine>@{argLine} -javaagent:${org.mockito:mockito-core:jar}</argLine>
+					<skipTests>${skipUnitTests}</skipTests>
+					<excludes>
+						<exclude>**/*IntegrationTest.java</exclude>
+						<!-- keep surefire default: nested classes run through their outer class -->
+						<exclude>**/*$*</exclude>
+					</excludes>
+				</configuration>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-failsafe-plugin</artifactId>
+				<configuration>
+					<argLine>@{argLine} -javaagent:${org.mockito:mockito-core:jar}</argLine>
+					<includes>
+						<include>**/*IntegrationTest.java</include>
+					</includes>
 				</configuration>
 			</plugin>
 		</plugins>

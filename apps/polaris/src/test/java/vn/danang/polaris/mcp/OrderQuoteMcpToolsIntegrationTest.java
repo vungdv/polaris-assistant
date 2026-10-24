@@ -29,7 +29,7 @@ import vn.danang.polaris.order.dto.QuoteResponse;
 @SpringBootTest
 @Transactional
 @Import(TestcontainersConfiguration.class)
-class OrderQuoteMcpToolsTest {
+class OrderQuoteMcpToolsIntegrationTest {
 
     @Autowired
     private OrderQuoteMcpTools orderQuoteMcpTools;

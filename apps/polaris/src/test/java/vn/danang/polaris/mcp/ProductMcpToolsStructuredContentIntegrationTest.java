@@ -35,7 +35,7 @@ import vn.danang.polaris.catalog.repository.ProductRepository;
 @SpringBootTest
 @Transactional
 @Import(TestcontainersConfiguration.class)
-class ProductMcpToolsStructuredContentTest {
+class ProductMcpToolsStructuredContentIntegrationTest {
 
     private static final List<String> PRODUCT_FIELDS =
             List.of("sku", "name", "category", "price", "stockQuantity", "available");

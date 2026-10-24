@@ -15,7 +15,7 @@ import io.cloudevents.kafka.KafkaMessageFactory;
 import vn.danang.polaris.outbox.kafka.KafkaEventTransport;
 import vn.danang.polaris.outbox.transport.EventTransport;
 
-class OutboxKafkaAutoConfigurationTest {
+class OutboxKafkaAutoConfigurationIntegrationTest {
 
     private final ApplicationContextRunner runner = new ApplicationContextRunner()
             .withConfiguration(AutoConfigurations.of(KafkaAutoConfiguration.class, OutboxAutoConfiguration.class,

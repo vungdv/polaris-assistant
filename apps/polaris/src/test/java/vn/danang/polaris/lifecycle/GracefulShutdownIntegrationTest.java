@@ -1,4 +1,4 @@
-package vn.danang.polaris.assistant.lifecycle;
+package vn.danang.polaris.lifecycle;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -37,8 +37,8 @@ import org.springframework.web.bind.annotation.RestController;
  * Spring MVC, configured from {@code src/main/resources/application.yml} alone, so the test needs no infrastructure
  * and fails if the production config stops shutting down gracefully.
  */
-@DisplayName("Polaris Assistant - Graceful shutdown drains in-flight requests")
-class GracefulShutdownTest {
+@DisplayName("Polaris Core - Graceful shutdown drains in-flight requests")
+class GracefulShutdownIntegrationTest {
 
     private static final String PRODUCTION_CONFIG = "file:src/main/resources/application.yml";
     private static final Duration WAIT = Duration.ofSeconds(10);

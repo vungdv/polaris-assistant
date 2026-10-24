@@ -38,7 +38,7 @@ import org.springframework.web.bind.annotation.RestController;
  * and fails if the production config stops shutting down gracefully.
  */
 @DisplayName("Fulfilment Emulator - Graceful shutdown drains in-flight requests")
-class GracefulShutdownTest {
+class GracefulShutdownIntegrationTest {
 
     private static final String PRODUCTION_CONFIG = "file:src/main/resources/application.yml";
     private static final Duration WAIT = Duration.ofSeconds(10);

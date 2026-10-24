@@ -23,7 +23,7 @@ import vn.danang.polaris.catalog.repository.ProductSpecifications;
 @SpringBootTest
 @Transactional
 @Import(TestcontainersConfiguration.class)
-public class ProductRepositoryTest {
+public class ProductRepositoryIntegrationTest {
 
     @Autowired
     private ProductRepository productRepository;

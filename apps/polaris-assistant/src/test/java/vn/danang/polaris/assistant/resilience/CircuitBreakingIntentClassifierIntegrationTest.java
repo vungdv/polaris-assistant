@@ -38,7 +38,7 @@ import vn.danang.polaris.assistant.intent.TypeSafeIntentClassifier;
  * The real {@link TypeSafeIntentClassifier} behind {@link CircuitBreakingIntentClassifier}, against WireMock fault
  * injection, with a breaker that opens after 4 failed calls.
  */
-class CircuitBreakingIntentClassifierTest {
+class CircuitBreakingIntentClassifierIntegrationTest {
 
     @RegisterExtension
     static WireMockExtension typeSafe = WireMockExtension.newInstance().options(wireMockConfig().dynamicPort()).build();
