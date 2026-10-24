@@ -238,41 +238,4 @@
 			</plugin>
 		</plugins>
 	</build>
-
-	<profiles>
-		<!-- Stage guard (TR-I4): runs in every module that has tests (not on -DskipTests, e.g. Docker image builds; not in validate, which cannot resolve reactor siblings). Activation on src/test/java skips the aggregator. -->
-		<profile>
-			<id>test-stage-guard</id>
-			<activation>
-				<file>
-					<exists>${basedir}/src/test/java</exists>
-				</file>
-			</activation>
-			<build>
-				<plugins>
-					<plugin>
-						<groupId>org.codehaus.mojo</groupId>
-						<artifactId>exec-maven-plugin</artifactId>
-						<version>3.6.4</version>
-						<executions>
-							<execution>
-								<id>test-stage-guard</id>
-								<phase>process-test-classes</phase>
-								<goals>
-									<goal>exec</goal>
-								</goals>
-								<configuration>
-									<skip>${skipTests}</skip>
-									<executable>${project.parent.basedir}/scripts/check-test-stages.sh</executable>
-									<arguments>
-										<argument>${project.basedir}</argument>
-									</arguments>
-								</configuration>
-							</execution>
-						</executions>
-					</plugin>
-				</plugins>
-			</build>
-		</profile>
-	</profiles>
 </project>

@@ -1,4 +1,4 @@
-.PHONY: seed-shoppers chat-scenarios pull build up up-dev-ports down validate-docs setup-hooks render-bpmn test test-unit test-integration test-guard sonar-up sonar sonar-down test-rules test-perf test-concurrency e2e-fulfilment e2e-fulfilment gcx gcx-exec status playwright-ui playwright-close run run-assistant run-fulfilment verify-fulfilment-image clean polaris-sql kafka-topics kafka-tail kafka-cluster kafka-offsets kafka-groups kafka-leaders k8s-tools k8s-validate k8s-up k8s-down k8s-smoke k8s-images k8s-e2e-fulfilment k8s-kafka-topics k8s-kafka-tail k8s-kafka-cluster k8s-kafka-offsets k8s-kafka-groups k8s-kafka-leaders
+.PHONY: seed-shoppers chat-scenarios pull build up up-dev-ports down validate-docs setup-hooks render-bpmn test test-unit test-integration sonar-up sonar sonar-down test-rules test-perf test-concurrency e2e-fulfilment e2e-fulfilment gcx gcx-exec status playwright-ui playwright-close run run-assistant run-fulfilment verify-fulfilment-image clean polaris-sql kafka-topics kafka-tail kafka-cluster kafka-offsets kafka-groups kafka-leaders k8s-tools k8s-validate k8s-up k8s-down k8s-smoke k8s-images k8s-e2e-fulfilment k8s-kafka-topics k8s-kafka-tail k8s-kafka-cluster k8s-kafka-offsets k8s-kafka-groups k8s-kafka-leaders
 
 run:
 	mvn spring-boot:run -pl apps/polaris
@@ -36,8 +36,6 @@ test-unit:
 	mvn test
 test-integration:
 	mvn verify -DskipUnitTests=true
-test-guard:
-	./scripts/check-test-stages.sh
 # SonarQube: UI http://localhost:9000 (admin/admin on first start). Create a project token there, then:
 #   SONAR_TOKEN=<token> make sonar   (or put SONAR_TOKEN / SONAR_HOST_URL in .env, which this target sources)
 sonar-up:

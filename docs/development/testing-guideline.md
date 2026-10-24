@@ -36,12 +36,12 @@ How we decide what kind of test to write, where it lives, and how it is run. Bas
 
 ## 4. Naming and stages
 
-Convention, enforced by the build (`scripts/check-test-stages.sh`, run before the tests (`process-test-classes`) of every module):
+Convention (the suffix selects the stage; automated enforcement and the aspect declaration mechanism follow in slice Q2.2):
 
 | Suffix / location | Stage | Must not |
 |:--|:--|:--|
 | `*Test` | Unit | Start a Spring context, open a socket, DB or container |
-| `*IntegrationTest` | Integration | Assert business rules; omit its declared aspect (`@Tag("aspect:<name>")`) |
+| `*IntegrationTest` | Integration | Assert business rules; omit its declared aspect |
 | Contract and journey tests | Own stage (contract, e2e) | Depend on the full stack (contract) or enumerate rule cases (journey) |
 | `tests/perf` | k6 | — |
 
@@ -49,12 +49,9 @@ Unit tests run in seconds on every change; integration tests run in minutes befo
 
 | Command | Runs |
 |:--|:--|
-| `make test-unit` (`mvn test`) | Guard, then `*Test` only (Surefire). No Spring context, no container. |
-| `make test-integration` (`mvn verify -DskipUnitTests=true`) | Guard, then `*IntegrationTest` only (Failsafe, needs Docker). |
-| `make test` (`mvn clean verify`) | Guard, unit, then integration. Coverage covers both. |
-| `make test-guard` | The guard alone. |
-
-**Aspect declaration.** An integration test carries `@Tag("aspect:<name>")` with `<name>` one of `persistence`, `web`, `boundary`, `resilience`, `cross-cutting`. Existing untagged integration tests are listed in `scripts/test-stage-baseline.txt`; that list only shrinks. Never add a line: tag the new test instead.
+| `make test-unit` (`mvn test`) | `*Test` only (Surefire). No Spring context, no container. |
+| `make test-integration` (`mvn verify -DskipUnitTests=true`) | `*IntegrationTest` only (Failsafe, needs Docker). |
+| `make test` (`mvn clean verify`) | Unit, then integration. Coverage covers both. |
 
 ## 5. Cross-cutting aspects
 

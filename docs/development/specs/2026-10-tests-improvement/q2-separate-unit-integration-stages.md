@@ -1,7 +1,7 @@
 # Q2: Separate unit and integration stages
 
 - **Plan:** [Tests Improvement](../../plan/2026-10-tests-improvement/02.plan.md) · **Slice:** Q2 · **Depends on:** Q1 (done)
-- **Scope:** separate unit and integration tests by naming convention (`*Test` = unit, `*IntegrationTest` = integration) and make each stage runnable on its own from Maven and `make`. Build and test tooling only; no production code, and no moving of tests between layers.
+- **Scope:** separate unit and integration tests by naming convention (`*Test` = unit, `*IntegrationTest` = integration) and make each stage runnable on its own from Maven and `make`. Build and test tooling only; no production code, no moving of tests between layers. Automated enforcement of the convention (guard, aspect tag) is slice Q2.2.
 - **Spec state:** in-review (approval is the PR review of this slice)
 
 ## 1. Principle and guidelines
@@ -51,7 +51,7 @@ Defined in the [testing guideline](../../testing-guideline.md); this slice appli
 | `RedisTimeoutProductionConfigIntegrationTest` | assistant | wiring | One production-config assertion. Move down or merge. Q6 |
 | `GenAiTelemetryConfigIntegrationTest` | assistant | cross-cutting (telemetry wiring) | Keep as the wiring test; content owned by `aop-trace-improvement.md` O1. Q6 |
 
-All 30 classes carry no aspect tag yet. Existing `*IntegrationTest` classes (32) also have none. Both groups are listed in `scripts/test-stage-baseline.txt`; each module slice tags its tests and removes the lines.
+The aspect column is the classification only; declaring it on each class (tag) and enforcing the convention is Q2.2.
 
 ### 2.2 CLI: run unit and integration stages separately
 
@@ -60,15 +60,11 @@ All 30 classes carry no aspect tag yet. Existing `*IntegrationTest` classes (32)
 | `make test-unit` (`mvn test`) | `*Test` only, via Surefire. No Spring context, no container. |
 | `make test-integration` (`mvn verify -DskipUnitTests=true`) | `*IntegrationTest` only, via Failsafe (needs Docker). |
 | `make test` (`mvn clean verify`) | Both stages. One JaCoCo report covers both for Sonar. |
-| `make test-guard` | The convention check below, alone. |
 
 Per module: `mvn test -pl apps/polaris`, `mvn verify -pl apps/polaris -DskipUnitTests=true`.
 
 Implementation notes:
-- **Surefire + Failsafe (D1).** Surefire excludes `**/*IntegrationTest.java` and keeps its default `**/*$*` exclusion (otherwise `@Nested` classes of an excluded outer class would run in the unit stage). Failsafe includes only `*IntegrationTest`. `skipUnitTests` follows `-DskipTests`; `-DskipITs` skips integration only.
-- **Convention check.** `scripts/check-test-stages.sh` runs in `process-test-classes` of every module with tests and is skipped on `-DskipTests` (Docker image builds). Rule A: a `*Test` must not use `@SpringBootTest`, `@WebMvcTest`, `@DataJpaTest`, `ApplicationContextRunner`, WireMock, Testcontainers, `ServerSocket` and similar. Rule B: an `*IntegrationTest` must carry `@Tag("aspect:<persistence|web|boundary|resilience|cross-cutting>")` unless it is in the baseline. The baseline only shrinks; a stale entry fails the check.
-- **Aspect declaration (D2):** the standard JUnit `@Tag`, not a custom meta-annotation, because no shared test module exists. It can be wrapped later without changing tag values.
-- **Check mechanism (D3):** a shell script, not ArchUnit: no dependency, heuristic text match, acceptable for a ratchet.
+- **Surefire + Failsafe (D1, resolved here).** Surefire excludes `**/*IntegrationTest.java` and keeps its default `**/*$*` exclusion (otherwise `@Nested` classes of an excluded outer class would run in the unit stage). Failsafe includes only `*IntegrationTest`. `skipUnitTests` follows `-DskipTests`; `-DskipITs` skips integration only.
 
 ### 2.3 Acceptance
 
@@ -77,13 +73,12 @@ Implementation notes:
 | AC-1 | `mvn clean test`: no `*IntegrationTest` runs; no Spring context or container starts. |
 | AC-2 | `mvn verify -DskipUnitTests=true`: only `*IntegrationTest` runs (Failsafe reports; no Surefire). |
 | AC-3 | `mvn clean verify`: both stages run; `jacoco.xml` is written after the integration stage. |
-| AC-4 | `scripts/test/check-test-stages.test.sh`: rule A, rule B, unknown tag, baseline ratchet and stale-entry cases behave as specified. |
-| AC-5 | `scripts/check-test-stages.sh` passes on the repository; `make -n` shows the four targets map to the commands above. |
-| AC-6 | `mvn package -DskipTests` (Docker image build) still works without the `scripts/` directory. |
+| AC-4 | `make -n` shows the three targets map to the commands above. |
+| AC-5 | `mvn package -DskipTests` (Docker image build) skips both stages (nothing else is bound to it). |
 
 ## 3. Out of scope
 
-Moving rules down into unit tests, deleting duplicates, tagging existing tests (Q5 to Q7); k6 scenarios for the concurrency tests (Q4); pyramid report (Q3); contract stage (Q8); CI job split (Q9; CI already runs `mvn verify`); speed work.
+Guard, aspect declaration and baseline (Q2.2, D2 and D3); moving rules down into unit tests, deleting duplicates, tagging existing tests (Q5 to Q7); k6 scenarios for the concurrency tests (Q4); pyramid report (Q3); contract stage (Q8); CI job split (Q9; CI already runs `mvn verify`); speed work.
 
 ## 4. Revisions
 
@@ -91,3 +86,4 @@ Moving rules down into unit tests, deleting duplicates, tagging existing tests (
 |:--|:--|:--|
 | 2026-10-23 | Initial draft | — |
 | 2026-10-24 | Restructured: principle reference, rename table classified by the guideline, CLI task. Template sections dropped. | PR review comments |
+| 2026-10-24 | Guard, aspect tag and baseline removed; moved to Q2.2 (ArchUnit). | Review decision |
