@@ -36,7 +36,7 @@ How we decide what kind of test to write, where it lives, and how it is run. Bas
 
 ## 4. Naming and stages
 
-Convention, enforced by the build (`scripts/check-test-stages.sh`, run in `validate` of every module):
+Convention, enforced by the build (`scripts/check-test-stages.sh`, run before the tests (`process-test-classes`) of every module):
 
 | Suffix / location | Stage | Must not |
 |:--|:--|:--|

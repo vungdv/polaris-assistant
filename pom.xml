@@ -40,7 +40,8 @@
 		<cloudevents.version>4.0.1</cloudevents.version>
 		<resilience4j.version>2.4.0</resilience4j.version>
 		<!-- Unit stage = surefire (*Test), integration stage = failsafe (*IntegrationTest). See docs/development/testing-guideline.md -->
-		<skipUnitTests>false</skipUnitTests>
+		<skipTests>false</skipTests>
+		<skipUnitTests>${skipTests}</skipUnitTests>
 	</properties>
 
 	<dependencyManagement>
@@ -239,7 +240,7 @@
 	</build>
 
 	<profiles>
-		<!-- Stage guard (TR-I4): runs in every module that has tests. Activation on src/test/java skips the aggregator. -->
+		<!-- Stage guard (TR-I4): runs in every module that has tests (not on -DskipTests, e.g. Docker image builds; not in validate, which cannot resolve reactor siblings). Activation on src/test/java skips the aggregator. -->
 		<profile>
 			<id>test-stage-guard</id>
 			<activation>
@@ -256,11 +257,12 @@
 						<executions>
 							<execution>
 								<id>test-stage-guard</id>
-								<phase>validate</phase>
+								<phase>process-test-classes</phase>
 								<goals>
 									<goal>exec</goal>
 								</goals>
 								<configuration>
+									<skip>${skipTests}</skip>
 									<executable>${project.parent.basedir}/scripts/check-test-stages.sh</executable>
 									<arguments>
 										<argument>${project.basedir}</argument>

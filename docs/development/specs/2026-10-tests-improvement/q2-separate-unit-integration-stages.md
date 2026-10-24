@@ -33,7 +33,7 @@ Today `*Test` and `*IntegrationTest` run in the same Surefire pass, and 30 class
 1. `make test-unit` (= `mvn test`) compiles each module and runs only classes matching `*Test` that are not `*IntegrationTest`. No Spring context, container or socket is started.
 2. `make test-integration` (= `mvn verify -DskipUnitTests=true`) runs only `*IntegrationTest` through Failsafe, then verifies the results.
 3. `make test` (= `mvn clean verify`) runs the guard, the unit stage, then the integration stage. JaCoCo writes one report covering both.
-4. `make test-guard` runs the guard alone. The guard also runs in the `validate` phase of every module build, so a violation fails the build before compilation.
+4. `make test-guard` runs the guard alone. The guard also runs in the `process-test-classes` phase of every module build (skipped with `-DskipTests`, as in the Docker image builds), so a violation fails the build before any test runs.
 
 ### 3.2 Rules and invariants
 - **Naming → stage (SC-2).** `*IntegrationTest` → integration stage (Failsafe). Any other `*Test` → unit stage (Surefire). Contract and journey stages are decided in Q8 and are not affected.
@@ -46,7 +46,7 @@ Today `*Test` and `*IntegrationTest` run in the same Surefire pass, and 30 class
 ### 3.3 Error and edge cases
 | Condition | Expected result |
 |:--|:--|
-| A `*Test` contains `@SpringBootTest` | Guard exits non-zero, prints `file: rule A: <matched token>`; build fails in `validate`. |
+| A `*Test` contains `@SpringBootTest` | Guard exits non-zero, prints `file: rule A: <matched token>`; build fails before tests run. |
 | An `*IntegrationTest` has no `@Tag("aspect:...")` and is not in the baseline | Guard exits non-zero, prints `file: rule B: missing aspect tag`. |
 | `@Tag("aspect:unknown")` | Guard exits non-zero (name not in the allowed list). |
 | Baseline line for a deleted or already tagged file | Guard exits non-zero, prints `baseline: stale entry <path>`. |
@@ -105,7 +105,7 @@ Per module: `mvn test -pl apps/polaris`, `mvn verify -pl apps/polaris -DskipUnit
 
 - **D1 resolved: Surefire + Failsafe.** The standard Maven lifecycle (`test` / `integration-test` / `verify`), the same `mvn verify` that CI already runs, and no custom executions. Surefire excludes `**/*IntegrationTest.java`; Failsafe includes only it.
 - **D2 resolved: `@Tag("aspect:<name>")`, not a custom meta-annotation.** The plan leaned to a meta-annotation, but that needs a shared test-support dependency for every module, which does not exist today. The JUnit tag is the standard mechanism (Principle 1), needs no new module, and can still be wrapped in a meta-annotation later without changing the tag values.
-- **D3 resolved: build check script, not ArchUnit.** A shell script over source files runs in `validate`, needs no dependency and no compiled classes, and fails before the slow stages. It is heuristic (text match), which is acceptable for a ratchet; ArchUnit can replace it if the heuristic proves too weak. Wired through `exec-maven-plugin` in a parent-pom profile that activates only in modules with `src/test/java`.
+- **D3 resolved: build check script, not ArchUnit.** A shell script over source files needs no dependency and fails before the test stages (it cannot run in `validate`: exec resolves test dependencies, which sibling modules lack in a validate-only reactor). It is heuristic (text match), which is acceptable for a ratchet; ArchUnit can replace it if the heuristic proves too weak. Wired through `exec-maven-plugin` in a parent-pom profile that activates only in modules with `src/test/java`.
 - **Nested classes.** Setting Surefire `excludes` replaces its default `**/*$*`, so nested JUnit classes of an excluded outer class would run in the unit stage. The configuration keeps `**/*$*` excluded; `@Nested` classes run through their outer class.
 - **Rename policy.** Only the 30 `*Test` classes matching guard rule A are renamed (class, file, and in-repo references). `git mv` keeps history. No assertion changes.
 - **Constraints from the codebase:** parent `pom.xml` already binds JaCoCo `prepare-agent` and Surefire `argLine`; `libs/polaris-events` overrides the Surefire `argLine` (no Mockito) and needs the same for Failsafe.
