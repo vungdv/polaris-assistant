@@ -9,6 +9,7 @@ COPY pom.xml .
 COPY libs/polaris-common/pom.xml libs/polaris-common/
 COPY libs/polaris-events/pom.xml libs/polaris-events/
 COPY libs/polaris-outbox/pom.xml libs/polaris-outbox/
+COPY libs/polaris-test-conventions/pom.xml libs/polaris-test-conventions/
 COPY apps/polaris/pom.xml apps/polaris/
 COPY apps/polaris-assistant/pom.xml apps/polaris-assistant/
 COPY apps/polaris-fulfilment-emulator/pom.xml apps/polaris-fulfilment-emulator/
