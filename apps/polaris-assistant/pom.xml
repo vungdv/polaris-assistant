@@ -155,7 +155,13 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
-    </dependencies>
+    		<!-- Convention guard: @IntegrationAspect and ArchUnit rules (testing guideline §4); test scope, never shipped -->
+		<dependency>
+			<groupId>vn.danang</groupId>
+			<artifactId>polaris-test-conventions</artifactId>
+			<scope>test</scope>
+		</dependency>
+	</dependencies>
 
 	<build>
 		<plugins>

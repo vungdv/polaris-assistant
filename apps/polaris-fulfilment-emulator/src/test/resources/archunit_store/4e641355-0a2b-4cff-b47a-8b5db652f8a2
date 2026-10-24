@@ -1,0 +1,2 @@
+Class <vn.danang.polaris.fulfilment.FulfilmentEmulatorIntegrationTest> is not annotated with @IntegrationAspect in (FulfilmentEmulatorIntegrationTest.java:0)
+Class <vn.danang.polaris.fulfilment.lifecycle.GracefulShutdownIntegrationTest> is not annotated with @IntegrationAspect in (GracefulShutdownIntegrationTest.java:0)

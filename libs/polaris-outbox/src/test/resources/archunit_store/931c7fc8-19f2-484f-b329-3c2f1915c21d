@@ -1,0 +1,7 @@
+Class <vn.danang.polaris.outbox.OutboxRecordingIntegrationTest> is not annotated with @IntegrationAspect in (OutboxRecordingIntegrationTest.java:0)
+Class <vn.danang.polaris.outbox.autoconfigure.OutboxAutoConfigurationIntegrationTest> is not annotated with @IntegrationAspect in (OutboxAutoConfigurationIntegrationTest.java:0)
+Class <vn.danang.polaris.outbox.autoconfigure.OutboxKafkaAutoConfigurationIntegrationTest> is not annotated with @IntegrationAspect in (OutboxKafkaAutoConfigurationIntegrationTest.java:0)
+Class <vn.danang.polaris.outbox.kafka.KafkaEventTransportIntegrationTest> is not annotated with @IntegrationAspect in (KafkaEventTransportIntegrationTest.java:0)
+Class <vn.danang.polaris.outbox.relay.OutboxRelayIntegrationTest> is not annotated with @IntegrationAspect in (OutboxRelayIntegrationTest.java:0)
+Class <vn.danang.polaris.outbox.relay.OutboxRelayWorkerIntegrationTest> is not annotated with @IntegrationAspect in (OutboxRelayWorkerIntegrationTest.java:0)
+Class <vn.danang.polaris.outbox.telemetry.ConsumerGroupMetricsKafkaIntegrationTest> is not annotated with @IntegrationAspect in (ConsumerGroupMetricsKafkaIntegrationTest.java:0)

@@ -36,7 +36,7 @@ How we decide what kind of test to write, where it lives, and how it is run. Bas
 
 ## 4. Naming and stages
 
-Convention (the suffix selects the stage; automated enforcement and the aspect declaration mechanism follow in slice Q2.2):
+Convention (the suffix selects the stage). It is enforced by ArchUnit rules that run in the unit stage of every module (`TestConventionsTest`, rules in `libs/polaris-test-conventions`). An integration test declares its aspect with `@IntegrationAspect(Aspect.X)`, one value per integration row of §3. Untagged integration tests that predate the rule sit in a frozen baseline (`src/test/resources/archunit_store`) that only shrinks; tag the class and the entry disappears.
 
 | Suffix / location | Stage | Must not |
 |:--|:--|:--|

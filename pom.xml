@@ -20,6 +20,7 @@
 		<module>libs/polaris-common</module>
 		<module>libs/polaris-events</module>
 		<module>libs/polaris-outbox</module>
+		<module>libs/polaris-test-conventions</module>
 		<module>apps/polaris</module>
 		<module>apps/polaris-assistant</module>
 		<module>apps/polaris-fulfilment-emulator</module>
@@ -39,6 +40,7 @@
 		<wiremock.version>3.13.2</wiremock.version>
 		<cloudevents.version>4.0.1</cloudevents.version>
 		<resilience4j.version>2.4.0</resilience4j.version>
+		<archunit.version>1.4.1</archunit.version>
 		<!-- Unit stage = surefire (*Test), integration stage = failsafe (*IntegrationTest). See docs/development/testing-guideline.md -->
 		<skipTests>false</skipTests>
 		<skipUnitTests>${skipTests}</skipUnitTests>
@@ -136,6 +138,16 @@
 				<groupId>io.cloudevents</groupId>
 				<artifactId>cloudevents-kafka</artifactId>
 				<version>${cloudevents.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>vn.danang</groupId>
+				<artifactId>polaris-test-conventions</artifactId>
+				<version>${polaris.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>com.tngtech.archunit</groupId>
+				<artifactId>archunit-junit5</artifactId>
+				<version>${archunit.version}</version>
 			</dependency>
 			<dependency>
 				<groupId>org.wiremock</groupId>
