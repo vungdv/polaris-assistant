@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Polaris</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 0; }
+    header { background: #1d2b3a; color: #fff; padding: .75rem 1rem; }
+    main { padding: 1rem; }
+  </style>
+</head>
+<body>
+  <header>Polaris (shell)</header>
+  <main><div id="assistant-slot"></div></main>
+  <!-- Runtime config: replaced at deploy time, not baked into the build (12-factor). -->
+  <script src="/config.js"></script>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

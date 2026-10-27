@@ -1,0 +1,14 @@
+{
+  "name": "container-web",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "serve": "node serve.js",
+    "test": "vitest run --environment jsdom"
+  },
+  "devDependencies": {
+    "jsdom": "^25.0.0",
+    "vitest": "^3.0.0"
+  }
+}
