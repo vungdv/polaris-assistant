@@ -29,7 +29,7 @@ status:
 	docker compose ps
 restart-%:
 	docker compose restart $*
-# Test stages (docs/development/testing-guideline.md §4): unit = *Test (surefire), integration = *IntegrationTest (failsafe, needs Docker)
+# Test stages (docs/development/testing-strategy.md §4): unit = *Test (surefire), integration = *IntegrationTest (failsafe, needs Docker)
 test:
 	mvn clean verify
 test-unit:

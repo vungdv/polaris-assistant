@@ -1,7 +1,7 @@
 # Tests Improvement
 
 - **Scope:** the automated test suite of every Maven module (`libs/*`, `apps/*`) and its CI pipeline
-- **Nature:** strategy spec. Objective and high-level requirements; the *how* lives in [`testing-guideline.md`](../../testing-guideline.md)
+- **Nature:** strategy spec. Objective and high-level requirements; the *how* lives in [`testing-strategy.md`](../../testing-strategy.md)
 - **Status:** Draft for review
 
 ## 1. Problem statement
@@ -30,7 +30,7 @@ We all know the test pyramid, but we lack a pragmatic guideline, and a guard, to
 
 ## 3. Relationship to the existing guideline
 
-`testing-guideline.md` already defines principles, the scope × aspect matrix, stage naming and a placement flow. This spec does **not** duplicate it. It requires the following changes to it:
+`testing-strategy.md` already defines principles, the scope × aspect matrix, stage naming and a placement flow. This spec does **not** duplicate it. It requires the following changes to it:
 
 - Add the intent classification of §4 (core / defensive / edge).
 - Give every rule a stable ID (e.g. `TG-3.2`) so the guard can cite it.
@@ -55,7 +55,7 @@ We all know the test pyramid, but we lack a pragmatic guideline, and a guard, to
 ## 6. Requirements: guard
 
 - **R6 Automated.** Stage purity (R4) is enforced by ArchUnit rules in `polaris-test-conventions`, applied to every module.
-- **R7 Traceable.** Every violation message states the rule ID and guideline link, e.g. `[TG-4.1] *Test must not use @SpringBootTest. See docs/development/testing-guideline.md#4`.
+- **R7 Traceable.** Every violation message states the rule ID and guideline link, e.g. `[TG-4.1] *Test must not use @SpringBootTest. See docs/development/testing-strategy.md#4`.
 - **R8 Escape hatch.** Exceptions are explicit and reviewable (mechanism TBD); a silent bypass is not allowed.
 
 *Not guarded in this spec:* single-reason-to-fail (R1/R2) is review-enforced for now; time budgets are measured but not build-failing.

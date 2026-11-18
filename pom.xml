@@ -39,7 +39,7 @@
 		<wiremock.version>3.13.2</wiremock.version>
 		<cloudevents.version>4.0.1</cloudevents.version>
 		<resilience4j.version>2.4.0</resilience4j.version>
-		<!-- Unit stage = surefire (*Test), integration stage = failsafe (*IntegrationTest). See docs/development/testing-guideline.md -->
+		<!-- Unit stage = surefire (*Test), integration stage = failsafe (*IntegrationTest). See docs/development/testing-strategy.md -->
 		<skipTests>false</skipTests>
 		<skipUnitTests>${skipTests}</skipUnitTests>
 	</properties>
